@@ -159,3 +159,6 @@ class Indexassign_Node(Node):
     ident : str
     index : Node
     value : Node
+
+@dataclass
+class
