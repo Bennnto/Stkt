@@ -1,0 +1,7 @@
+// Hello World in Stkt
+onscreen "Hello, World from Stkt v1.0.0!"
+
+let version_major: i32 = 1
+let version_minor: i32 = 0
+onscreen "Compiler version:"
+onscreen version_major

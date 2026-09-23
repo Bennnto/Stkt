@@ -1,0 +1,21 @@
+// Array Demonstration in Stkt
+let numbers[5]: i32 = [10, 20, 30, 40, 50]
+
+onscreen "Original element at index 0:"
+onscreen numbers[0]
+
+// Mutate an element
+numbers[1] = 99
+onscreen "Mutated element at index 1:"
+onscreen numbers[1]
+
+// Compute sum of elements using while loop
+let total: i32 = 0
+let i: i32 = 0
+while i < 5 {
+    total = total + numbers[i]
+    i = i + 1
+}
+
+onscreen "Total sum of array elements:"
+onscreen total

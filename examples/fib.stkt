@@ -1,0 +1,31 @@
+// Fibonacci and Factorial in Stkt
+
+// Recursive Fibonacci
+proc fib :i32(n: i32) {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+// Iterative Factorial with while loop
+proc factorial :i32(n: i32) {
+    let result: i32 = 1
+    let i: i32 = 1
+    while i <= n {
+        result = result * i
+        i = i + 1
+    }
+    return result
+}
+
+onscreen "=== Fibonacci Numbers ==="
+let n: i32 = 0
+while n <= 8 {
+    onscreen fib(n)
+    n = n + 1
+}
+
+onscreen "=== Factorial of 5 ==="
+let fact5: i32 = factorial(5)
+onscreen fact5
