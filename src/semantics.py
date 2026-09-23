@@ -32,6 +32,8 @@ from astnodes import (
     Arrayliteral_Node,
     Indexaccess_Node,
     Indexassign_Node,
+    Case_Node,
+    Match_Node,
 )
 
 INTEGER_TYPES = {
@@ -351,6 +353,29 @@ class SemanticAnalyze:
                     f"Array '{node.ident}' elements must be of type '{expected_elem_type}', got '{val_type}'"
                 )
 
+        elif isinstance(node, Match_Node):
+            self.analyse(node.cond)
+            cond_type = self.infer_type(node.cond)
+            norm_cond = "i32" if cond_type == "int" else ("f32" if cond_type == "float" else cond_type)
+            prev = self.environment
+            self.environment = Environment(parent=prev, scope="Match")
+            try:
+                for case in node.cases :
+                    if case.target is not None:
+                        self.analyse(case.target)
+                        target_type = self.infer_type(case.target)
+                        norm_target = "i32" if target_type == "int" else ("f32" if target_type == "float" else target_type)
+                        if norm_cond != norm_target:
+                            raise SemanticError(f"Match pattern type mismatch expected '{norm_cond}' got '{norm_target}'")
+
+                    if isinstance(case.body, list):
+                        for stmt in case.body:
+                            self.analyse(stmt)
+                    elif case.body is not None :
+                        self.analyse(case.body)
+            finally :
+                self.environment = prev
+            return norm_cond
 
 
     def infer_type(self, node):
@@ -516,4 +541,4 @@ class SemanticAnalyze:
                 norm_et = "i32" if et == "int" else ("f32" if et == "float" else et)
                 if norm_et != norm_first:
                     raise SemanticError(f"Array literal elements must all have the same type")
-            return f"[{norm_first}]" 
+            return f"[{norm_first}]"

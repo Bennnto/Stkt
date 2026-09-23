@@ -28,6 +28,8 @@ from astnodes import (
     Arrayliteral_Node,
     Indexaccess_Node,
     Indexassign_Node,
+    Case_Node,
+    Match_Node,
 )
 
 C_TYPEMAP = {
@@ -470,3 +472,69 @@ class CodeGenerator:
         idx = self.generate_expression(node.index)
         val = self.generate_expression(node.value)
         self.emit(f"{node.ident}[{idx}] = {val};")
+
+
+    def gen_Match_Node(self, node:Match_Node):
+        cond_type = self.infer_expression_type(node.cond)
+
+        if cond_type in ("str", "float", "f32", "f64"):
+            self.gen_match_as_if_else(node, cond_type)
+        else:
+            self.gen_match_as_switch(node)
+
+    def gen_match_as_switch(self, node:Match_Node):
+        cond = self.generate_expression(node.cond)
+        self.emit(f"switch ({cond}) {{")
+        self.indent_level += 1
+
+        for case in node.cases :
+            if case.target is not None :
+                target_val = self.generate_expression(case.target)
+                self.emit(f"case {target_val}: {{")
+            else:
+                self.emit("default: {")
+
+            self.indent_level += 1
+            if isinstance(case.body, list):
+                for stmt in case.body :
+                    self.generate_statement(stmt)
+            elif case.body is not None :
+                self.generate_statement(case.body)
+
+            self.emit("break;")
+            self.indent_level -= 1
+            self.emit("}")
+        self.indent_level -= 1
+        self.emit("}")
+
+    def gen_match_as_if_else(self, node: Match_Node, cond_type : str):
+        cond_val = self.generate_expression(node.cond)
+        temp_var = f"__match_val_{self.lambda_count}"
+        self.lambda_count += 1
+
+        c_type = "const char*" if cond_type == "str" else "float"
+        self.emit(f"{c_type} {temp_var} = {cond_val};")
+
+        first = True
+        for case in node.cases :
+            if case.target is not None :
+                target_val = self.generate_expression(case.target)
+                if cond_type == "str":
+                    check = f"strcmp({temp_var}, {target_val}) == 0"
+                else :
+                    check = f"{temp_var} == {target_val}"
+                branch = "if" if first else "else if"
+                self.emit(f"{branch} ({check}) {{")
+                first = False
+            else :
+                self.emit("else {")
+
+            self.indent_level += 1
+            if isinstance(case.body, list):
+                for stmt in case.body:
+                    self.generate_statement(stmt)
+            elif case.body is not None :
+                self.generate_statement(case.body)
+
+            self.indent_level -= 1
+            self.emit("}")

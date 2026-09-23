@@ -154,9 +154,21 @@ class Indexaccess_Node(Node):
     array : Node
     index : Node
 
+
 @dataclass
 class Indexassign_Node(Node):
     ident : str
     index : Node
     value : Node
 
+
+@dataclass
+class Case_Node(Node):
+    body : List[Node]
+    target : Optional[Node] = None
+
+
+@dataclass
+class Match_Node(Node):
+    cond : Node
+    cases : List[Case_Node]

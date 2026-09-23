@@ -27,6 +27,7 @@ tokens = (
     'COLON', 'SEMICOLON', 'COMMA',
     'LET', 'CONST', 'ASSIGN', 'IDENT', 'PROCEDURE', 'WHILE', 'IF', 'ELSE', 'LAMBDA',
     'FOR', 'TERNARY', 'RETURN', 'BREAK', 'CONTINUE', 'ONSCREEN', 'SCAN', 'ONKEY',
+    'CASE', 'MATCH', 'DEFAULT',
 )
 
 t_ADD = r'\+'
@@ -62,6 +63,7 @@ t_ASSIGN = r'='
 t_ignore = ' \t'
 t_TERNARY = r'\?'
 t_ignore_COMMENT = r'//.*'
+t_DEFAULT = r'_'
 
 reserved_key = {
     'let' : 'LET',
@@ -96,7 +98,9 @@ reserved_key = {
     'break' : 'BREAK',
     'onscreen' : 'ONSCREEN',
     'scan' : 'ONKEY',
-    'onkey' : 'ONKEY'
+    'onkey' : 'ONKEY',
+    'case' : 'CASE',
+    'match' : 'MATCH',
 }
 
 def t_IDENT(t):

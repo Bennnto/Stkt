@@ -32,6 +32,9 @@ from astnodes import (
     Arrayliteral_Node,
     Indexaccess_Node,
     Indexassign_Node,
+    Case_Node,
+    Match_Node,
+
 )
 #-----------------------------------
 # PRECEDENCE
@@ -77,7 +80,8 @@ def p_statement(p):
                  | continue_stmt
                  | onscreen_stmt
                  | array_decl
-                 | index_assign_stmt'''
+                 | index_assign_stmt
+                 | match_stmt'''
     p[0] = p[1]
 
 def p_statements(p):
@@ -385,6 +389,29 @@ def p_index_assign_stmt(p):
     '''index_assign_stmt : IDENT LBRACKET expression RBRACKET ASSIGN expression'''
     p[0] = Indexassign_Node(ident=p[1], index=p[3], value=p[6])
 
+#-----------------------------------
+# MATCH AND CASE
+#-----------------------------------
+
+def p_case(p):
+    '''case : CASE expression block
+            | DEFAULT block'''
+    if len(p) == 4 :
+        p[0] = Case_Node(body=p[3], target=p[2])
+    else:
+        p[0] = Case_Node(body=p[2])
+
+def p_cases(p):
+    '''cases : case
+             | cases case'''
+    if len(p) == 3:
+        p[0] = p[1] + [p[2]]
+    else :
+        p[0] = [p[1]]
+
+def p_match_stmt(p):
+    '''match_stmt : MATCH expression LBRACE cases RBRACE'''
+    p[0] = Match_Node(target=p[2], cases=p[4])
 
 #-----------------------------------
 # OTHERs
