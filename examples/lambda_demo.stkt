@@ -1,0 +1,14 @@
+// Lambda demonstration in Stkt using `L` keyword
+let square = L :i32(x: i32) {
+    return x * x
+}
+
+let sum = L :i32(a: i32, b: i32) {
+    return a + b
+}
+
+onscreen "Square of 8:"
+onscreen square(8)
+
+onscreen "Sum of 100 + 42:"
+onscreen sum(100, 42)

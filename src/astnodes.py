@@ -160,5 +160,3 @@ class Indexassign_Node(Node):
     index : Node
     value : Node
 
-@dataclass
-class

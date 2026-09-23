@@ -289,9 +289,23 @@ class CodeGenerator:
 
     def gen_Annassign_Node(self, node: Annassign_Node):
         ident = node.ident
-        type_name = node.type_name.type_name if hasattr(node.type_name, "type_name") else str(node.type_name)
-        c_type = C_TYPEMAP.get(type_name, "int32_t")
-        self.variable[ident] = type_name
+        if node.type_name is not None:
+            type_name = node.type_name.type_name if hasattr(node.type_name, "type_name") else str(node.type_name)
+            c_type = C_TYPEMAP.get(type_name, "int32_t")
+            self.variable[ident] = type_name
+        else:
+            type_name = self.infer_expression_type(node.value)
+            self.variable[ident] = type_name
+            if isinstance(node.value, Lambda_Node):
+                # Function pointer type
+                ret_t = node.value.return_type.type_name if hasattr(node.value.return_type, "type_name") else str(node.value.return_type)
+                ret_c = C_TYPEMAP.get(ret_t, "int32_t")
+                param_c = [C_TYPEMAP.get(p.type_name.type_name if hasattr(p.type_name, "type_name") else str(p.type_name), "int32_t") for p in node.value.param]
+                param_str = ", ".join(param_c) if param_c else "void"
+                value = self.generate_expression(node.value)
+                self.emit(f"{ret_c} (*{ident})({param_str}) = {value};")
+                return
+            c_type = C_TYPEMAP.get(type_name, "int32_t")
         value = self.generate_expression(node.value)
         self.emit(f"{c_type} {ident} = {value};")
 

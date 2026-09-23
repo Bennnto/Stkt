@@ -195,8 +195,12 @@ def p_reassign_stmt(p):
 #-----------------------------------
 
 def p_annassign_stmt(p):
-    '''annassign_stmt : LET IDENT COLON type ASSIGN expression'''
-    p[0] = Annassign_Node(ident=p[2], type_name=p[4], value=p[6])
+    '''annassign_stmt : LET IDENT COLON type ASSIGN expression
+                     | LET IDENT ASSIGN expression'''
+    if len(p) == 7:
+        p[0] = Annassign_Node(ident=p[2], type_name=p[4], value=p[6])
+    else:
+        p[0] = Annassign_Node(ident=p[2], type_name=None, value=p[4])
 
 #-----------------------------------
 # PROCEDURE & PARAMS
@@ -226,9 +230,11 @@ def p_param_list(p):
 #-----------------------------------
 def p_if_else_stmt(p):
     '''if_else_stmt : IF expression block ELSE block
+                    | IF expression block ELSE if_else_stmt
                     | IF expression block'''
-    if len(p) == 6 :
-        p[0] = Ifelse_Node(if_cond=p[2], if_body=p[3], else_body=p[5])
+    if len(p) == 6:
+        else_branch = p[5] if isinstance(p[5], list) else [p[5]]
+        p[0] = Ifelse_Node(if_cond=p[2], if_body=p[3], else_body=else_branch)
     else:
         p[0] = Ifelse_Node(if_cond=p[2], if_body=p[3], else_body=None)
 
@@ -324,7 +330,10 @@ def p_onscreen_stmt(p):
 # SCAN
 #-----------------------------------
 def p_expr_scan(p):
-    '''expression : SCAN COLON type
+    '''expression : ONKEY COLON type
+                  | ONKEY LPAREN type RPAREN
+                  | ONKEY LPAREN expression COMMA type RPAREN
+                  | SCAN COLON type
                   | SCAN LPAREN type RPAREN
                   | SCAN LPAREN expression COMMA type RPAREN'''
     if len(p) == 4:

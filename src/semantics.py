@@ -84,16 +84,24 @@ class SemanticAnalyze:
             self.infer_type(node)
 
         elif isinstance(node, Annassign_Node):
+            if node.ident in self.environment.symbols:
+                raise SemanticError(f"Variable '{node.ident}' is already defined in this scope")
             self.analyse(node.value)
-            expected_type = node.type_name.type_name if hasattr(node.type_name, 'type_name') else str(node.type_name)
             actual_type = self.infer_type(node.value)
-
-            norm_expected = "i32" if expected_type == "int" else ("f32" if expected_type == "float" else expected_type)
-            norm_actual = "i32" if actual_type == "int" else ("f32" if actual_type == "float" else actual_type)
-
-            if norm_expected != norm_actual:
-                raise SemanticError(f"Variable '{node.ident}' declared '{expected_type}' got '{actual_type}'")
-            symbol = Symbol(ident=node.ident, type_name=expected_type)
+            if node.type_name is not None:
+                expected_type = node.type_name.type_name if hasattr(node.type_name, 'type_name') else str(node.type_name)
+                norm_expected = "i32" if expected_type == "int" else ("f32" if expected_type == "float" else expected_type)
+                norm_actual = "i32" if actual_type == "int" else ("f32" if actual_type == "float" else actual_type)
+                if norm_expected != norm_actual:
+                    raise SemanticError(f"Variable '{node.ident}' declared '{expected_type}' got '{actual_type}'")
+                symbol = Symbol(ident=node.ident, type_name=expected_type)
+            else:
+                if isinstance(node.value, Lambda_Node):
+                    p_types = [p.type_name.type_name if hasattr(p.type_name, "type_name") else str(p.type_name) for p in node.value.param]
+                    ret_t = node.value.return_type.type_name if hasattr(node.value.return_type, "type_name") else str(node.value.return_type)
+                    symbol = Symbol(ident=node.ident, type_name=ret_t, param_type=p_types)
+                else:
+                    symbol = Symbol(ident=node.ident, type_name=actual_type)
             self.environment.define(symbol)
 
         elif isinstance(node, Assign_Node):
@@ -490,6 +498,13 @@ class SemanticAnalyze:
 
             elem_type = arr_type[1:-1]
             return elem_type
+
+
+        if isinstance(node, Lambda_Node):
+            ret_type = node.return_type.type_name if hasattr(node.return_type, 'type_name') else str(node.return_type)
+            param_types = [p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name) for p in node.param]
+            types_joined = ",".join(param_types)
+            return f"fn({types_joined})->{ret_type}"
 
         if isinstance(node, Arrayliteral_Node):
             if not node.elements:

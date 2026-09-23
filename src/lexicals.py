@@ -26,7 +26,7 @@ tokens = (
     'LPAREN', 'RPAREN', 'LBRACE', 'RBRACE', 'LBRACKET', 'RBRACKET',
     'COLON', 'SEMICOLON', 'COMMA',
     'LET', 'CONST', 'ASSIGN', 'IDENT', 'PROCEDURE', 'WHILE', 'IF', 'ELSE', 'LAMBDA',
-    'FOR', 'TERNARY', 'RETURN', 'BREAK', 'CONTINUE', 'ONSCREEN', 'SCAN',
+    'FOR', 'TERNARY', 'RETURN', 'BREAK', 'CONTINUE', 'ONSCREEN', 'SCAN', 'ONKEY',
 )
 
 t_ADD = r'\+'
@@ -95,7 +95,8 @@ reserved_key = {
     'continue': 'CONTINUE',
     'break' : 'BREAK',
     'onscreen' : 'ONSCREEN',
-    'scan' : 'SCAN'
+    'scan' : 'ONKEY',
+    'onkey' : 'ONKEY'
 }
 
 def t_IDENT(t):
@@ -128,8 +129,7 @@ def t_newline(t):
     t.lexer.lineno += len(t.value)
 
 def t_error(t):
-    print(f'Invalid Token at {t.lineno} position {t.lexpos}')
-    t.lexer.skip(1)
+    raise SyntaxError(f"Illegal character '{t.value[0]}' at line {t.lineno} position {t.lexpos}")
 
 def t_COMMENT_BLOCK(t):
     r'/\*[\s\S]*?\*/'
