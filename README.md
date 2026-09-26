@@ -105,3 +105,14 @@ let name:str = onkey("Your name: ", str)
 onscreen("Hello World")
 ```
 ____
+
+
+#### MATCH and CASE 
+```stkt
+// Match expression with case statements 
+match code {
+    case 200 { onscreen "OK" }
+    case 404 { onscreen "Not Found" }
+    case _   { onscreen "Unknown" }
+}
+```

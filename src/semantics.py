@@ -1,5 +1,7 @@
-from tkinter.constants import S
-
+from pathlib import Path
+from parse import parser
+from codegen import CodeGenerator
+from lexicals import lexer
 from environment import Environment, Symbol
 from astnodes import (
     Program_Node,
@@ -30,10 +32,22 @@ from astnodes import (
     Scan_Node,
     Arraydecl_Node,
     Arrayliteral_Node,
+    InterpolatedStr_Node,
     Indexaccess_Node,
     Indexassign_Node,
     Case_Node,
     Match_Node,
+    Loop_Node,
+    Step_Node,
+    Field_Node,
+    Typedecl_Node,
+    Typeaccess_Node,
+    SliceDecl_Node,
+    Append_Node,
+    Pop_Node,
+    Len_Node,
+    Sync_Node,
+    Export_Node
 )
 
 INTEGER_TYPES = {
@@ -58,6 +72,21 @@ class SemanticAnalyze:
         self.loop_depth = 0
 
     def validate_call(self, proc_symbol, node: Call_Node):
+        if proc_symbol.fields is not None:
+            # Struct constructor call like Point(1, 2)
+            expected_count = len(proc_symbol.fields)
+            actual_count = len(node.args) if node.args else 0
+            if actual_count != expected_count:
+                raise SemanticError(
+                    f"Struct '{node.ident}' expects {expected_count} arguments, got {actual_count}"
+                )
+            for (f_name, f_type), arg in zip(proc_symbol.fields.items(), node.args):
+                arg_type = self.infer_type(arg)
+                norm_arg = "i32" if arg_type == "int" else ("f32" if arg_type == "float" else arg_type)
+                if norm_arg != f_type:
+                    raise SemanticError(f"Field '{f_name}' expects type '{f_type}', got '{arg_type}'")
+            return
+
         if proc_symbol.param_type is None:
             raise SemanticError(f"'{node.ident}' is not a callable procedure")
 
@@ -81,6 +110,10 @@ class SemanticAnalyze:
         if isinstance(node, Program_Node):
             for stmt in node.statements:
                 self.analyse(stmt)
+
+        elif isinstance(node, InterpolatedStr_Node):
+            for part in node.parts:
+                self.analyse(part)
 
         elif isinstance(node, (Int_Node, Str_Node, Float_Node, Char_Node, Bool_Node, Ident_Node)):
             self.infer_type(node)
@@ -142,7 +175,7 @@ class SemanticAnalyze:
                 raise SemanticError(f"Procedure '{node.ident}' already defined in this scope")
             ret_type_str = node.return_type.type_name if hasattr(node.return_type, 'type_name') else str(node.return_type)
             param_types = [p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name) for p in node.param]
-            proc_symbol = Symbol(ident=ident, type_name=ret_type_str, param_type=param_types)
+            proc_symbol = Symbol(ident=ident, type_name=ret_type_str, param_type=param_types, is_exported=node.is_exported)
             self.environment.define(proc_symbol)
 
             prev_env = self.environment
@@ -229,6 +262,19 @@ class SemanticAnalyze:
             finally :
                 self.loop_depth -= 1
 
+        elif isinstance(node, Append_Node):
+            self.analyse(node.array)
+            self.analyse(node.value)
+            arr_t = self.infer_type(node.array)
+            if not (arr_t.startswith("[") and arr_t.endswith("]")):
+                raise SemanticError(f"append() first argument must be a slice, got '{arr_t}'")
+            val_t = self.infer_type(node.value)
+            norm_val = "i32" if val_t == "int" else ("f32" if val_t == "float" else val_t)
+            elem_t = arr_t[1:-1]
+            if norm_val != elem_t:
+                raise SemanticError(f"cannot append '{norm_val}' to slice of type '{arr_t}'")
+            return "void"
+
         elif isinstance(node, (Call_Node, Ternary_Node, Cast_Node)):
             self.infer_type(node)
 
@@ -283,6 +329,25 @@ class SemanticAnalyze:
 
         elif isinstance(node, Scan_Node):
             self.infer_type(node)
+
+
+        elif isinstance(node, SliceDecl_Node):
+            ident = node.ident
+            if ident in self.environment.symbols:
+                raise SemanticError(f"Variable '{ident}' is already defined in this scope")
+            elem_type = node.elem_type.type_name if hasattr(node.elem_type, "type_name") else str(node.elem_type)
+            norm_elem = "i32" if elem_type == "int" else ("f32" if elem_type == "float" else elem_type)
+            if node.elements:
+                self.analyse(node.elements)
+                elems_type = self.infer_type(node.elements)
+                expected_type = f"[{norm_elem}]"
+                if elems_type != expected_type:
+                    raise SemanticError(f"Slice '{ident}' expected elements of type '{expected_type}', got '{elems_type}'")
+            # Define as slice
+            sym = Symbol(ident=ident, type_name=f"[{norm_elem}]")
+            sym.is_slice = True
+            self.environment.define(sym)
+            return f"[{norm_elem}]"
 
         elif isinstance(node, Arraydecl_Node):
             ident = node.ident
@@ -377,8 +442,117 @@ class SemanticAnalyze:
                 self.environment = prev
             return norm_cond
 
+        elif isinstance(node, Loop_Node):
+            self.analyse(node.time)
+            time_type = self.infer_type(node.time)
+            norm_time_type = "i32" if time_type == "int" else ("f32" if time_type == "float" else time_type)
+            if norm_time_type not in INTEGER_TYPES:
+                raise SemanticError(f"Loop time type must be an interger type got '{norm_time_type}'")
+            if node.step is not None:
+                self.analyse(node.step.value)
+                step_type = self.infer_type(node.step.value)
+                norm_step_type = "i32" if step_type == "int" else ("f32" if step_type == "float" else step_type)
+                if norm_step_type not in INTEGER_TYPES:
+                    raise SemanticError(f"Loop step type must be an interger type got '{norm_step_type}'")
+
+                if isinstance(node.time, Int_Node) and isinstance(node.step.value, Int_Node):
+                    if node.time.value < node.step.value.value:
+                        raise SemanticError("Loop time must be greater than or equal to the step value")
+            self.loop_depth += 1
+            try :
+                if isinstance(node.body, list):
+                    for stmt in node.body:
+                        self.analyse(stmt)
+                elif node.body is not None :
+                    self.analyse(node.body)
+
+            finally:
+                self.loop_depth -= 1
+            return "void"
+
+        elif isinstance(node, Typedecl_Node):
+            if node.ident in self.environment.symbols:
+                raise SemanticError(f"Type definition '{node.ident}' already declared")
+            struct_fields = {}
+            for field in node.field:
+                if field.ident in struct_fields:
+                    raise SemanticError(f"Field '{field.ident}' declared multiple times in struct '{node.ident}'")
+                field_type = field.type_name.type_name if hasattr(field.type_name, 'type_name') else str(field.type_name)
+                norm_field_type = "i32" if field_type == "int" else ("f32" if field_type == "float" else field_type)
+                struct_fields[field.ident] = norm_field_type
+            type_symbol = Symbol(
+                ident = node.ident,
+                type_name = node.ident,
+                fields = struct_fields
+            )
+            self.environment.define(type_symbol)
+            return "void"
+
+        elif isinstance(node, Call_Node):
+            proc_symbol = self.environment.resolve(node.ident)
+            if proc_symbol is None:
+                raise SemanticError(f"Procedure '{node.ident}' is not defined in this scope")
+
+            # Allow struct instantiation like Point(1, 2)
+            if proc_symbol.fields is not None:
+                expected_count = len(proc_symbol.fields)
+                actual_count = len(node.args) if node.args else 0
+                if expected_count != actual_count:
+                    raise SemanticError(
+                        f"Struct '{node.ident}' expects {expected_count} arguments, got {actual_count}"
+                    )
+                for arg in node.args:
+                    self.analyse(arg)
+                return proc_symbol.type_name
+
+            if proc_symbol.param_type is None:
+                raise SemanticError(f"'{node.ident}' is not a callable procedure")
+
+        elif isinstance(node, Export_Node):
+            if self.environment.parent is not None :
+                raise SemanticError("Export statements are only allowed at top level scope")
+            symbol = self.environment.resolve(node.ident)
+            if symbol is None :
+               raise SemanticError(f"'{node.ident}' is not defined in this scope")
+            symbol.is_exported = True
+            return "void"
+
+        elif isinstance(node, Sync_Node):
+            if self.environment.parent is not None :
+                raise SemanticError(f"Sync statements are only allowed at top level scope")
+            raw_path = node.m_path.value if hasattr(node.m_path, "value") else str(node.m_path)
+            module_path = Path(raw_path)
+
+            if not module_path.exists():
+                raise SemanticError(f"Module '{node.m_path} does not exist")
+            with open(module_path, "r") as f:
+                code = f.read()
+            module_ast = parser.parse(code, lexer=lexer)
+            prev_env = self.environment
+            module_env = Environment(parent=prev_env, scope="Sync")
+            self.environment = module_env
+            try:
+                self.analyse(module_ast)
+            finally:
+                self.environment = prev_env
+                for sym in module_env.symbols.values():
+                    if sym.is_exported:
+                        self.environment.define(sym)
+            return "void"
 
     def infer_type(self, node):
+        if isinstance(node, Len_Node):
+            arg_t = self.infer_type(node.array)
+            if not (arg_t.startswith("[") and arg_t.endswith("]")) and arg_t != "str":
+                raise SemanticError(f"len() requires an array, slice, or string, got '{arg_t}'")
+            return "i32"
+
+        if isinstance(node, Pop_Node):
+            arg_t = self.infer_type(node.array)
+            if not (arg_t.startswith("[") and arg_t.endswith("]")):
+                raise SemanticError(f"pop() requires a slice or array, got '{arg_t}'")
+            return arg_t[1:-1]
+
         if isinstance(node, Int_Node):
             return "i32"
 
@@ -391,7 +565,7 @@ class SemanticAnalyze:
         if isinstance(node, Char_Node):
             return "char"
 
-        if isinstance(node, Str_Node):
+        if isinstance(node, (Str_Node, InterpolatedStr_Node)):
             return "str"
 
         if isinstance(node, Ident_Node):
@@ -464,7 +638,38 @@ class SemanticAnalyze:
                 return "float" if norm_operand in ("f32", "f64") else "int"
 
 
+
         if isinstance(node, Call_Node):
+            if node.ident == "len":
+                if not node.args or len(node.args) != 1:
+                    raise SemanticError("len() expects exactly 1 argument")
+                arg_t = self.infer_type(node.args[0])
+                if not (arg_t.startswith("[") and arg_t.endswith("]")) and arg_t != "str":
+                    raise SemanticError(f"len() requires an array, slice, or string, got '{arg_t}'")
+                return "i32"
+
+            if node.ident == "pop":
+                if not node.args or len(node.args) != 1:
+                    raise SemanticError("pop() expects exactly 1 argument")
+                arg_t = self.infer_type(node.args[0])
+                if not (arg_t.startswith("[") and arg_t.endswith("]")):
+                    raise SemanticError(f"pop() requires a slice or array, got '{arg_t}'")
+                elem_t = arg_t[1:-1]
+                return elem_t
+
+            if node.ident == "append":
+                if not node.args or len(node.args) != 2:
+                    raise SemanticError("append() expects exactly 2 arguments (slice, value)")
+                arr_t = self.infer_type(node.args[0])
+                if not (arr_t.startswith("[") and arr_t.endswith("]")):
+                    raise SemanticError(f"append() first argument must be a slice, got '{arr_t}'")
+                val_t = self.infer_type(node.args[1])
+                norm_val = "i32" if val_t == "int" else ("f32" if val_t == "float" else val_t)
+                elem_t = arr_t[1:-1]
+                if norm_val != elem_t:
+                    raise SemanticError(f"Cannot append '{norm_val}' to slice of type '{arr_t}'")
+                return "void"
+
             func_symbol = self.environment.resolve(node.ident)
             if func_symbol is None:
                 raise SemanticError(f"Function '{node.ident}' not defined in this scope")
@@ -542,3 +747,28 @@ class SemanticAnalyze:
                 if norm_et != norm_first:
                     raise SemanticError(f"Array literal elements must all have the same type")
             return f"[{norm_first}]"
+
+        if isinstance(node, Field_Node):
+            self.analyse(node.ident)
+            field_type = node.type_name.type_name if hasattr(node.type_name, 'type_name') else str(node.type_name)
+            norm_field_type = "i32" if field_type == "int" else ("f32" if field_type == "float" else field_type)
+            return norm_field_type
+
+        if isinstance(node, Typeaccess_Node):
+            # Resolve object type
+            obj_name = node.ident
+            obj_sym = self.environment.resolve(obj_name)
+            if obj_sym is None:
+                raise SemanticError(f"Variable '{obj_name}' is not defined")
+
+            # Look up struct type
+            struct_sym = self.environment.resolve(obj_sym.type_name)
+            if struct_sym is None or struct_sym.fields is None:
+                raise SemanticError(f"Variable '{obj_name}' of type '{obj_sym.type_name}' is not a struct")
+
+            # Field name is node.target
+            field_name = node.target.ident if hasattr(node.target, "ident") else str(node.target)
+            if field_name not in struct_sym.fields:
+                raise SemanticError(f"Type '{obj_sym.type_name}' has no field '{field_name}'")
+
+            return struct_sym.fields[field_name]

@@ -18,7 +18,7 @@ tokens = (
     'LT', 'GT', 'LE', 'GE', 'NE', 'EQ',
     'AND', 'OR',
     'BIT_AND', 'BIT_OR', 'BIT_XOR', 'BIT_NOT', 'LSHFT', 'RSHFT',
-    'NOT', 'UMINUS',
+    'NOT', 'UMINUS', 'DOT',
 
     #---------------------
     # KEYWORDS & OTHERS
@@ -27,7 +27,9 @@ tokens = (
     'COLON', 'SEMICOLON', 'COMMA',
     'LET', 'CONST', 'ASSIGN', 'IDENT', 'PROCEDURE', 'WHILE', 'IF', 'ELSE', 'LAMBDA',
     'FOR', 'TERNARY', 'RETURN', 'BREAK', 'CONTINUE', 'ONSCREEN', 'SCAN', 'ONKEY',
-    'CASE', 'MATCH', 'DEFAULT',
+    'CASE', 'MATCH', 'DEFAULT', 'LOOP', 'STEP', 'TYPE_DEF', 'APPEND', 'LEN', 'POP',
+    'SYNC', 'EXPORT', 'AS',
+
 )
 
 t_ADD = r'\+'
@@ -63,7 +65,7 @@ t_ASSIGN = r'='
 t_ignore = ' \t'
 t_TERNARY = r'\?'
 t_ignore_COMMENT = r'//.*'
-t_DEFAULT = r'_'
+t_DOT = r'\.'
 
 reserved_key = {
     'let' : 'LET',
@@ -101,6 +103,16 @@ reserved_key = {
     'onkey' : 'ONKEY',
     'case' : 'CASE',
     'match' : 'MATCH',
+    'default' : 'DEFAULT',
+    '_' : 'DEFAULT',
+    'loop' : 'LOOP',
+    'step' : 'STEP',
+    'type' : 'TYPE_DEF',
+    'append' : 'APPEND',
+    'len' : 'LEN',
+    'pop' : 'POP',
+    'sync' : 'SYNC',
+    'export' : 'EXPORT',
 }
 
 def t_IDENT(t):

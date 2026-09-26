@@ -48,7 +48,7 @@ def test_type_mismatch_int_to_str():
     assert_semantic_error('let x: i32 = "hello"', "declared 'i32' got 'str'")
 
 def test_type_mismatch_float_to_bool():
-    assert_semantic_error('let b: bool = 3.14', "declared 'bool' got 'float'")
+    assert_semantic_error('let b: bool = 3.14', "declared 'bool' got 'f32'")
 
 def test_type_mismatch_reassign():
     code = """
@@ -93,7 +93,7 @@ def test_procedure_return_type_mismatch():
         return "not an integer"
     }
     """
-    assert_semantic_error(code, "expects return type 'i32'")
+    assert_semantic_error(code, "expected 'i32' got 'str'")
 
 # ==========================================
 # 4. PROCEDURE CALL FAILURES
@@ -109,7 +109,7 @@ def test_call_argument_count_too_few():
     }
     let res: i32 = add(1)
     """
-    assert_semantic_error(code, "expected 2 arguments, got 1")
+    assert_semantic_error(code, "expects 2 arguments, got 1")
 
 def test_call_argument_count_too_many():
     code = """
@@ -118,7 +118,7 @@ def test_call_argument_count_too_many():
     }
     let res: i32 = add(1, 2, 3)
     """
-    assert_semantic_error(code, "expected 2 arguments, got 3")
+    assert_semantic_error(code, "expects 2 arguments, got 3")
 
 def test_call_argument_type_mismatch():
     code = """
@@ -127,7 +127,7 @@ def test_call_argument_type_mismatch():
     }
     let res: i32 = square("hello")
     """
-    assert_semantic_error(code, "argument 0 expected 'i32', got 'str'")
+    assert_semantic_error(code, "argument 1 expected 'i32', got 'str'")
 
 # ==========================================
 # 5. ARRAY EDGE CASES & BOUNDARY REJECTIONS
@@ -266,3 +266,105 @@ def test_onkey_input_execution(run_stkt):
     """
     output = run_stkt(code, user_input="21\n")
     assert "42" in output
+
+def test_match_case_execution(run_stkt):
+    code = """
+    let code: i32 = 404
+    match code {
+        case 200 { onscreen "OK" }
+        case 404 { onscreen "NOT FOUND" }
+        case _   { onscreen "DEFAULT" }
+    }
+    let fallback: i32 = 999
+    match fallback {
+        case 100 { onscreen "ONE" }
+        case _   { onscreen "FALLBACK" }
+    }
+    """
+    output = run_stkt(code)
+    lines = [line.strip() for line in output.strip().splitlines() if line.strip()]
+    assert "NOT FOUND" in lines
+    assert "FALLBACK" in lines
+
+# ==========================================
+# 11. DYNAMIC ARRAYS / SLICES TESTS
+# ==========================================
+
+def test_slice_append_and_len(run_stkt):
+    code = """
+    let arr: [i32] = [1, 2]
+    append(arr, 3)
+    append(arr, 4)
+    onscreen len(arr)
+    """
+    output = run_stkt(code)
+    assert "4" in output
+
+def test_slice_pop_execution(run_stkt):
+    code = """
+    let arr: [i32] = [10, 20, 30]
+    let removed: i32 = pop(arr)
+    onscreen removed
+    onscreen len(arr)
+    """
+    output = run_stkt(code)
+    assert "30" in output
+    assert "2" in output
+
+def test_slice_indexing_and_reassignment(run_stkt):
+    code = """
+    let arr: [i32] = [5, 10, 15]
+    arr[1] = 99
+    onscreen arr[1]
+    """
+    output = run_stkt(code)
+    assert "99" in output
+
+def test_slice_type_mismatch_rejection():
+    code = """
+    let arr: [i32] = [1, 2]
+    append(arr, "invalid_string")
+    """
+    assert_semantic_error(code, "cannot append 'str' to slice of type '[i32]'")
+
+def test_export(run_stkt):
+    code="""
+    """
+
+# ==========================================
+# 12. SYNC & EXPORT MODULE TESTS
+# ==========================================
+
+def test_sync_module_public_procedure(tmp_path, run_stkt):
+    mod_file = tmp_path / "math_mod.stkt"
+    mod_file.write_text("""
+    export proc add :i32(a: i32, b: i32) {
+        return a + b
+    }
+    """)
+    main_code = f"""
+    sync "{str(mod_file)}"
+    let sum: i32 = add(10, 20)
+    onscreen sum
+    """
+    output = run_stkt(main_code)
+    assert "30" in output
+
+def test_sync_module_private_procedure_rejected(tmp_path):
+    mod_file = tmp_path / "priv_mod.stkt"
+    mod_file.write_text("""
+    proc secret :i32() {
+        return 42
+    }
+    """)
+    main_code = f"""
+    sync "{str(mod_file)}"
+    let v: i32 = secret()
+    """
+    assert_semantic_error(main_code, "not defined in this scope")
+
+def test_sync_nonexistent_module_rejected():
+    code = """
+    sync "/path/that/does/not/exist.stkt"
+    """
+    assert_semantic_error(code, "does not exist")

@@ -26,10 +26,22 @@ from astnodes import (
     Scan_Node,
     Arraydecl_Node,
     Arrayliteral_Node,
+    InterpolatedStr_Node,
     Indexaccess_Node,
     Indexassign_Node,
     Case_Node,
     Match_Node,
+    Loop_Node,
+    Step_Node,
+    Field_Node,
+    Typedecl_Node,
+    Typeaccess_Node,
+    SliceDecl_Node,
+    Append_Node,
+    Pop_Node,
+    Export_Node,
+    Sync_Node,
+    Len_Node,
 )
 
 C_TYPEMAP = {
@@ -89,6 +101,24 @@ class CodeGenerator:
             "#include <stdbool.h>",
             "#include <time.h>",
             "#include <setjmp.h>",
+            "/* Stkt Dynamic Array / Slice Runtime */",
+            "#define STKT_SLICE_DEFINE(TYPE, NAME) typedef struct { TYPE* data; size_t len; size_t cap; } NAME;",
+            "STKT_SLICE_DEFINE(int32_t, stkt_slice_i32)",
+            "STKT_SLICE_DEFINE(int64_t, stkt_slice_i64)",
+            "STKT_SLICE_DEFINE(float, stkt_slice_f32)",
+            "STKT_SLICE_DEFINE(double, stkt_slice_f64)",
+            "STKT_SLICE_DEFINE(char*, stkt_slice_str)",
+            "#define STKT_SLICE_INIT(s) do { (s).data = NULL; (s).len = 0; (s).cap = 0; } while(0)",
+            "#define STKT_SLICE_APPEND(s, val) do { \\",
+            "    if ((s).len >= (s).cap) { \\",
+            "        (s).cap = ((s).cap == 0) ? 4 : ((s).cap * 2); \\",
+            "        (s).data = realloc((s).data, (s).cap * sizeof(*(s).data)); \\",
+            "    } \\",
+            "    (s).data[(s).len++] = (val); \\",
+            "} while(0)",
+            "#define STKT_SLICE_POP(s) ((s).data[--(s).len])",
+            "#define STKT_SLICE_LEN(s) ((int32_t)(s).len)",
+            "",
             "",
             "/* Stkt Standard Runtime Scanners */",
             "static inline __attribute__((unused)) int32_t stkt_scan_i32() { int32_t v = 0; if (scanf(\"%d\", &v) != 1) return 0; return v; }",
@@ -117,9 +147,11 @@ class CodeGenerator:
 
         main_stmts = []
         for stmt in statements:
-            if isinstance(stmt, Procedure_Node):
+            if isinstance(stmt, (Procedure_Node, Typedecl_Node)):
                 self.gen_Procedure_Node(stmt)
                 self.lines.append("")
+            elif isinstance(stmt, Sync_Node):
+                self.gen_Sync_Node(stmt)
             else:
                 main_stmts.append(stmt)
 
@@ -158,7 +190,7 @@ class CodeGenerator:
             return "bool"
         elif isinstance(node, Char_Node):
             return "char"
-        elif isinstance(node, Str_Node):
+        elif isinstance(node, (Str_Node, InterpolatedStr_Node)):
             return "str"
         elif isinstance(node, Ident_Node):
             return self.variable.get(node.ident, "i32")
@@ -187,6 +219,46 @@ class CodeGenerator:
 
         elif isinstance(node, Str_Node):
             return f'"{node.value}"'
+
+        elif isinstance(node, InterpolatedStr_Node):
+            buf_name = f"__str_buf_{self.lambda_count}"
+            self.lambda_count += 1
+            format_specifiers = []
+            c_args = []
+
+            for part in node.parts:
+                if isinstance(part, Str_Node):
+                    escaped = part.value.replace("%", "%%").replace("\n", "\\n")
+                    format_specifiers.append(escaped)
+                else:
+                    arg_type = self.infer_expression_type(part)
+                    norm_type = "i32" if arg_type == "int" else ("f32" if arg_type == "float" else arg_type)
+                    if norm_type in ("i32", "i16", "i8"):
+                        format_specifiers.append("%d")
+                    elif norm_type in ("u32", "u16", "u8"):
+                        format_specifiers.append("%u")
+                    elif norm_type in ("i64",):
+                        format_specifiers.append("%lld")
+                    elif norm_type in ("f32", "f64"):
+                        format_specifiers.append("%f")
+                    elif norm_type == "char":
+                        format_specifiers.append("%c")
+                    elif norm_type == "bool":
+                        format_specifiers.append("%s")
+                    else:
+                        format_specifiers.append("%s")
+
+                    expr_c = self.generate_expression(part)
+                    if norm_type == "bool":
+                        c_args.append(f"({expr_c} ? \"true\" : \"false\")")
+                    else:
+                        c_args.append(expr_c)
+
+            fmt_string = "".join(format_specifiers)
+            arg_str = ", " + ", ".join(c_args) if c_args else ""
+            self.emit(f"char {buf_name}[1024];")
+            self.emit(f'snprintf({buf_name}, sizeof({buf_name}), "{fmt_string}"{arg_str});')
+            return buf_name
 
         elif isinstance(node, Ident_Node):
             return str(node.ident)
@@ -229,7 +301,25 @@ class CodeGenerator:
             self.lines = old_lines
             return lambda_name
 
+        elif isinstance(node, Len_Node):
+            arr = self.generate_expression(node.array)
+            return f"STKT_SLICE_LEN({arr})"
+
+        elif isinstance(node, Pop_Node):
+            arr = self.generate_expression(node.array)
+            return f"STKT_SLICE_POP({arr})"
+
         elif isinstance(node, Call_Node):
+            if node.ident == "len":
+                arr = self.generate_expression(node.args[0])
+                return f"STKT_SLICE_LEN({arr})"
+            if node.ident == "pop":
+                arr = self.generate_expression(node.args[0])
+                return f"STKT_SLICE_POP({arr})"
+            if node.ident == "append":
+                arr = self.generate_expression(node.args[0])
+                val = self.generate_expression(node.args[1])
+                return f"STKT_SLICE_APPEND({arr}, {val})"
             args = [self.generate_expression(arg) for arg in node.args]
             arg_str = ", ".join(args)
             return f"{node.ident}({arg_str})"
@@ -287,6 +377,10 @@ class CodeGenerator:
         elif isinstance(node, Indexaccess_Node):
             arr = self.generate_expression(node.array)
             idx = self.generate_expression(node.index)
+            # If variable is slice, access through data pointer
+            arr_var_type = self.variable.get(arr, "")
+            if "stkt_slice" in arr_var_type:
+                return f"{arr}.data[{idx}]"
             return f"{arr}[{idx}]"
 
     def gen_Annassign_Node(self, node: Annassign_Node):
@@ -471,7 +565,11 @@ class CodeGenerator:
     def gen_Indexassign_Node(self, node: Indexassign_Node):
         idx = self.generate_expression(node.index)
         val = self.generate_expression(node.value)
-        self.emit(f"{node.ident}[{idx}] = {val};")
+        var_t = self.variable.get(node.ident, "")
+        if "stkt_slice" in var_t:
+            self.emit(f"{node.ident}.data[{idx}] = {val};")
+        else:
+            self.emit(f"{node.ident}[{idx}] = {val};")
 
 
     def gen_Match_Node(self, node:Match_Node):
@@ -538,3 +636,84 @@ class CodeGenerator:
 
             self.indent_level -= 1
             self.emit("}")
+
+    def gen_Loop_Node(self, node: Loop_Node):
+        loop_var = f"__loop_i_{self.lambda_count}"
+        self.lambda_count += 1
+        time = self.generate_expression(node.time)
+        if node.step is not None :
+            step = self.generate_expression(node.step.value)
+            self.emit(f"for (int32_t {loop_var} = 0; {loop_var} < {time}; {loop_var} += {step}) {{")
+        else :
+            self.emit(f"for (int32_t {loop_var} = 0; {loop_var} < {time}; {loop_var}++) {{")
+        self.indent_level += 1
+        if isinstance(node.body, list):
+            for stmt in node.body:
+                self.generate_statement(stmt)
+        elif node.body is not None:
+            self.generate_statement(node.body)
+        self.indent_level -= 1
+        self.emit("}")
+
+    def gen_Typedecl_Node(self, node: Typedecl_Node):
+        old_lines = self.lines
+        old_indent = self.indent_level
+
+        # Emit at top-level functions/headers section
+        self.lines = self.functions
+        self.indent_level = 0
+
+        self.emit(f"typedef struct {{")
+        self.indent_level += 1
+        for f in node.field:
+            f_ident = f.ident
+            f_type = f.type_name.type_name if hasattr(f.type_name, 'type_name') else str(f.type_name)
+            f_c_type = C_TYPEMAP.get(f_type, f_type)  # Supports primitive types and nested custom types!
+            self.emit(f"{f_c_type} {f_ident};")
+        self.indent_level -= 1
+        self.emit(f"}} {node.ident};")
+        self.emit("")
+
+        # Restore previous emission buffer and indent
+        self.lines = old_lines
+        self.indent_level = old_indent
+
+
+    def gen_SliceDecl_Node(self, node):
+        elem_type_str = node.elem_type.type_name if hasattr(node.elem_type, "type_name") else str(node.elem_type)
+        slice_type = f"stkt_slice_{elem_type_str}"
+        if slice_type not in ("stkt_slice_i32", "stkt_slice_i64", "stkt_slice_f32", "stkt_slice_f64", "stkt_slice_str"):
+            slice_type = "stkt_slice_i32"
+        self.variable[node.ident] = slice_type
+        self.emit(f"{slice_type} {node.ident};")
+        self.emit(f"STKT_SLICE_INIT({node.ident});")
+        if node.elements:
+            elems = []
+            if hasattr(node.elements, "elements"):
+                elems = node.elements.elements
+            elif isinstance(node.elements, list):
+                elems = node.elements
+            for el in elems:
+                v = self.generate_expression(el)
+                self.emit(f"STKT_SLICE_APPEND({node.ident}, {v});")
+
+    def gen_Append_Node(self, node):
+        arr = self.generate_expression(node.array)
+        val = self.generate_expression(node.value)
+        self.emit(f"STKT_SLICE_APPEND({arr}, {val});")
+
+    def gen_Sync_Node(self, node):
+        raw_path = node.m_path.value if hasattr(node.m_path, "value") else str(node.m_path)
+        with open(raw_path, "r") as f:
+            code = f.read()
+        from parse import parser
+        from lexicals import lexer
+        module_ast = parser.parse(code, lexer=lexer)
+        stmts = module_ast.statements if hasattr(module_ast, 'statements') else module_ast
+        for stmt in stmts:
+            if isinstance(stmt, Procedure_Node) and getattr(stmt, "is_exported", False):
+                self.gen_Procedure_Node(stmt)
+                self.lines.append("")
+            elif isinstance(stmt, Typedecl_Node):
+                self.gen_Typedecl_Node(stmt)
+                self.lines.append("")

@@ -7,6 +7,8 @@ class Symbol :
     type_name : str
     is_const : Optional[bool] = False
     param_type : Optional[List[str]] = None
+    fields : Optional[Dict[str, str]] = None
+    is_exported : bool = False
 
 
 
@@ -22,8 +24,8 @@ class Environment :
 
 
     def resolve(self, ident):
-        if ident in self.symbols:
+        if ident in self.symbols :
             return self.symbols[ident]
-        if self.parent :
+        elif self.parent is not None :
             return self.parent.resolve(ident)
         return None

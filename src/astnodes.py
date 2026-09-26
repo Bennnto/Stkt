@@ -64,6 +64,7 @@ class Procedure_Node(Node):
     return_type : Type_Node
     param : List[Parameter_Node]
     body : List[Node]
+    is_exported : bool = False
 
 @dataclass
 class While_Node(Node):
@@ -172,3 +173,64 @@ class Case_Node(Node):
 class Match_Node(Node):
     cond : Node
     cases : List[Case_Node]
+
+
+@dataclass
+class InterpolatedStr_Node(Node):
+    parts : List[Node]
+
+
+@dataclass
+class Step_Node(Node):
+    value : Node
+
+
+@dataclass
+class Loop_Node(Node):
+    time : Node
+    body : List[Node]
+    step : Optional[Step_Node] = None
+
+
+@dataclass
+class Field_Node(Node):
+    ident : str
+    type_name : Type_Node
+
+@dataclass
+class Typedecl_Node(Node):
+    ident : str
+    field : List[Field_Node]
+
+@dataclass
+class Typeaccess_Node(Node):
+    ident : str
+    target : Node
+
+@dataclass
+class Append_Node(Node):
+    array : Node
+    value : Node
+
+@dataclass
+class Pop_Node(Node):
+    array : Node
+
+@dataclass
+class Len_Node(Node):
+    array : Node
+
+@dataclass
+class SliceDecl_Node(Node):
+    ident : str
+    elem_type : Type_Node
+    elements : Optional[Node] = None
+
+@dataclass
+class Export_Node(Node):
+    decl : Node
+
+@dataclass
+class Sync_Node(Node):
+    m_path : str
+    alias : Optional[str] = None

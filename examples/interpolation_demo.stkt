@@ -1,0 +1,10 @@
+// String Interpolation demonstration in Stkt
+let user: str = "Alice"
+let current_year: i32 = 2026
+let birth_year: i32 = 2001
+let rating: f32 = 4.95
+
+onscreen "Welcome, {user}!"
+onscreen "You are {current_year - birth_year} years old."
+onscreen "Account rating: {rating} stars."
+onscreen "Summary: User={user}, Age={current_year - birth_year}, Verified={true}"

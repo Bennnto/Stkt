@@ -30,10 +30,22 @@ from astnodes import (
     Scan_Node,
     Arraydecl_Node,
     Arrayliteral_Node,
+    InterpolatedStr_Node,
     Indexaccess_Node,
     Indexassign_Node,
     Case_Node,
     Match_Node,
+    Loop_Node,
+    Step_Node,
+    Field_Node,
+    Typedecl_Node,
+    Typeaccess_Node,
+    Sync_Node,
+    Export_Node,
+    SliceDecl_Node,
+    Append_Node,
+    Pop_Node,
+    Len_Node,
 
 )
 #-----------------------------------
@@ -81,7 +93,12 @@ def p_statement(p):
                  | onscreen_stmt
                  | array_decl
                  | index_assign_stmt
-                 | match_stmt'''
+                 | match_stmt
+                 | loop_stmt
+                 | typedef_decl_stmt
+                 | sync_stmt
+                 | export_stmt
+                 | append_stmt'''
     p[0] = p[1]
 
 def p_statements(p):
@@ -114,6 +131,27 @@ def p_type(p):
             | VOID'''
     p[0] = Type_Node(type_name=p[1])
 
+import re
+
+def _parse_interpolated_string(raw_str):
+    pattern = re.compile(r"\{([^}]+)\}")
+    parts = []
+    last_idx = 0
+    has_expr = False
+    sub_lexer = lexer.clone()
+    for m in pattern.finditer(raw_str):
+        has_expr = True
+        if m.start() > last_idx:
+            parts.append(Str_Node(value=raw_str[last_idx:m.start()]))
+        expr_text = m.group(1).strip()
+        sub_ast = parser.parse(expr_text, lexer=sub_lexer)
+        if sub_ast and sub_ast.statements:
+            parts.append(sub_ast.statements[0])
+        last_idx = m.end()
+    if last_idx < len(raw_str):
+        parts.append(Str_Node(value=raw_str[last_idx:]))
+    return parts if has_expr else None
+
 def p_literals(p):
     '''expression : STR
                   | INT
@@ -127,7 +165,15 @@ def p_literals(p):
     elif tok_type == "FLT":
         p[0] = Float_Node(value=float(p[1]))
     elif tok_type == "STR":
-        p[0] = Str_Node(value=p[1])
+        raw_val = p[1]
+        if "{" in raw_val and "}" in raw_val:
+            interp_parts = _parse_interpolated_string(raw_val)
+            if interp_parts is not None:
+                p[0] = InterpolatedStr_Node(parts=interp_parts)
+            else:
+                p[0] = Str_Node(value=raw_val)
+        else:
+            p[0] = Str_Node(value=raw_val)
     elif tok_type == "CHAR":
         p[0] = Char_Node(value=p[1])
     elif tok_type == "TRUE":
@@ -200,9 +246,16 @@ def p_reassign_stmt(p):
 
 def p_annassign_stmt(p):
     '''annassign_stmt : LET IDENT COLON type ASSIGN expression
+                     | LET IDENT COLON IDENT ASSIGN expression
+                     | LET IDENT COLON LBRACKET type RBRACKET ASSIGN expression
+                     | LET IDENT COLON LBRACKET type RBRACKET
                      | LET IDENT ASSIGN expression'''
     if len(p) == 7:
         p[0] = Annassign_Node(ident=p[2], type_name=p[4], value=p[6])
+    elif len(p) == 9:
+        p[0] = SliceDecl_Node(ident=p[2], elem_type=p[5], elements=p[8])
+    elif len(p) == 7 and p[3] == ':' and p[4] == '[':
+        p[0] = SliceDecl_Node(ident=p[2], elem_type=p[5], elements=None)
     else:
         p[0] = Annassign_Node(ident=p[2], type_name=None, value=p[4])
 
@@ -211,9 +264,12 @@ def p_annassign_stmt(p):
 #-----------------------------------
 
 def p_procedure_stmt(p):
-    '''procedure_stmt : PROCEDURE IDENT COLON type LPAREN param_lists RPAREN block'''
-    p[0] = Procedure_Node(ident=p[2], return_type=p[4], param=p[6], body=p[8])
-
+    '''procedure_stmt : PROCEDURE IDENT COLON type LPAREN param_lists RPAREN block
+                      | EXPORT PROCEDURE IDENT COLON type LPAREN param_lists RPAREN block'''
+    if len(p) == 9 :
+        p[0] = Procedure_Node(ident=p[2], return_type=p[4], param=p[6], body=p[8], is_exported=False)
+    else:
+        p[0] = Procedure_Node(ident=p[3], return_type=p[5], param=p[7], body=p[9], is_exported=True)
 def p_param(p):
     '''param : IDENT COLON type'''
     p[0] = Parameter_Node(ident=p[1], type_name=p[3])
@@ -326,9 +382,8 @@ def p_continue_stmt(p):
 # ONSCREEN
 #-----------------------------------
 def p_onscreen_stmt(p):
-    '''onscreen_stmt : ONSCREEN expression
-                     | ONSCREEN LPAREN expression RPAREN'''
-    p[0] = Onscreen_Node(value=p[2] if len(p) == 3 else p[3])
+    '''onscreen_stmt : ONSCREEN expression'''
+    p[0] = Onscreen_Node(value=p[2])
 
 #-----------------------------------
 # SCAN
@@ -395,11 +450,15 @@ def p_index_assign_stmt(p):
 
 def p_case(p):
     '''case : CASE expression block
-            | DEFAULT block'''
-    if len(p) == 4 :
-        p[0] = Case_Node(body=p[3], target=p[2])
+            | DEFAULT block
+            | CASE DEFAULT block'''
+    if len(p) == 4:
+        if p[2] == "_" or p[2] == "default":
+            p[0] = Case_Node(body=p[3], target=None)
+        else:
+            p[0] = Case_Node(body=p[3], target=p[2])
     else:
-        p[0] = Case_Node(body=p[2])
+        p[0] = Case_Node(body=p[2], target=None)
 
 def p_cases(p):
     '''cases : case
@@ -411,7 +470,75 @@ def p_cases(p):
 
 def p_match_stmt(p):
     '''match_stmt : MATCH expression LBRACE cases RBRACE'''
-    p[0] = Match_Node(target=p[2], cases=p[4])
+    p[0] = Match_Node(cond=p[2], cases=p[4])
+
+#-----------------------------------
+# LOOP AND STEP
+#-----------------------------------
+
+def p_step(p) :
+    '''step : STEP expression'''
+    p[0] = Step_Node(value=p[2])
+
+def p_loop_stmt(p):
+    '''loop_stmt : LOOP expression block
+                | LOOP expression step block'''
+    if len(p) == 4:
+        p[0] = Loop_Node(time=p[2], body=p[3])
+    else:
+        p[0] = Loop_Node(time=p[2], body=p[4], step=p[3])
+
+#-----------------------------------
+# TYPE DEFINITION AND FIELDS
+#-----------------------------------
+def p_field(p):
+    '''field : IDENT COLON type'''
+    p[0] = Field_Node(ident=p[1], type_name=p[3])
+
+def p_fields(p):
+    '''fields : field
+             | fields COMMA field'''
+    if len(p) == 2:
+        p[0] = [p[1]]
+    else:
+        p[0] = p[1] + [p[3]]
+
+def p_typedef_decl_stmt(p):
+    '''typedef_decl_stmt : TYPE_DEF IDENT LBRACE fields RBRACE'''
+    p[0] = Typedecl_Node(ident=p[2], field=p[4])
+
+def p_typeaccess_expr(p):
+    '''expression : IDENT DOT expression'''
+    p[0] = Typeaccess_Node(ident=p[1], target=p[3])
+
+#-----------------------------------
+# SYNC & EXPORT
+#-----------------------------------
+
+def p_export_stmt(p):
+    '''export_stmt : EXPORT IDENT'''
+    p[0] = Export_Node(decl=p[2])
+
+def p_append_stmt(p):
+    '''append_stmt : APPEND LPAREN expression COMMA expression RPAREN'''
+    p[0] = Append_Node(array=p[3], value=p[5])
+
+
+def p_expr_pop(p):
+    '''expression : POP LPAREN expression RPAREN'''
+    p[0] = Pop_Node(array=p[3])
+
+def p_expr_len(p):
+    '''expression : LEN LPAREN expression RPAREN'''
+    p[0] = Len_Node(array=p[3])
+
+def p_sync_stmt(p):
+    '''sync_stmt : SYNC expression
+                 | SYNC expression AS IDENT'''
+    if len(p) == 3:
+        p[0] = Sync_Node(m_path=p[2])
+    else:
+        p[0] = Sync_Node(m_path=p[2], alias=p[4])
 
 #-----------------------------------
 # OTHERs
@@ -430,3 +557,6 @@ def p_error(p):
 # PARSER
 #-----------------------------------
 parser = yacc.yacc()
+
+
+

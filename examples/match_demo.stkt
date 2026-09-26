@@ -1,0 +1,29 @@
+// Match & Case pattern matching demonstration in Stkt
+let status: i32 = 404
+
+onscreen "Evaluating HTTP status code:"
+match status {
+    case 200 {
+        onscreen "HTTP 200: OK"
+    }
+    case 404 {
+        onscreen "HTTP 404: Not Found"
+    }
+    case 500 {
+        onscreen "HTTP 500: Internal Server Error"
+    }
+    case _ {
+        onscreen "HTTP: Unknown Status Code"
+    }
+}
+
+// Fallback to default wildcard case
+let error_code: i32 = 999
+match error_code {
+    case 1 {
+        onscreen "Code 1"
+    }
+    case _ {
+        onscreen "Caught by default wildcard case!"
+    }
+}

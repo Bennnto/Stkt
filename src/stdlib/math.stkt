@@ -1,0 +1,53 @@
+//Stkt Standard Library : Math
+
+export proc abs :i32 (n: i32) {
+    if n < 0 {
+        return -n
+    } else {
+        return n
+    }
+}
+
+export proc max :i32 (a: i32, b: i32) {
+    if a > b {
+        return a
+    } else {
+        return b
+    }
+}
+
+export proc min :i32 (a: i32, b: i32) {
+    if a < b {
+        return a
+    } else {
+        return b
+    }
+}
+
+export proc pow_int :i32 (base: i32, exp: i32) {
+    let res: i32 = 1
+    loop exp {
+        res = res * base
+    }
+    return res
+}
+
+export proc floor :i32 (n: i32) {
+    int_part = x - (x % 1)
+    if x < 0 && x % 1 != 0 {
+        return int_part - 1
+    }
+    return int_part
+}
+
+export clamp :i32 (v: i32, low: i32, hight: i32) {
+    if v < low {
+        return low
+    } else {
+        if v > hight {
+            return hight
+        } else {
+            return v
+        }
+    }
+}
