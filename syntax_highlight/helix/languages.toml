@@ -1,0 +1,15 @@
+# Helix editor configuration for Stkt (languages.toml)
+
+[[language]]
+name = "stkt"
+scope = "source.stkt"
+injection-regex = "stkt"
+file-types = ["stkt"]
+comment-token = "//"
+block-comment-tokens = { start = "/*", end = "*/" }
+indent = { tab-width = 4, unit = "    " }
+roots = ["stkt.toml", ".git"]
+
+[[grammar]]
+name = "stkt"
+source = { git = "https://github.com/Bennnto/tree-sitter-stkt", rev = "main" }

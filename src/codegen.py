@@ -1,3 +1,5 @@
+from pathlib import Path
+from semantics import resolve_module_path
 from astnodes import (
     Program_Node,
     Int_Node,
@@ -215,7 +217,10 @@ class CodeGenerator:
             return "true" if node.value else "false"
 
         elif isinstance(node, Char_Node):
-            return f"'{node.value}'"
+            val = str(node.value)
+            if val.startswith("'") and val.endswith("'"):
+                return val
+            return f"'{val}'"
 
         elif isinstance(node, Str_Node):
             return f'"{node.value}"'
@@ -303,6 +308,9 @@ class CodeGenerator:
 
         elif isinstance(node, Len_Node):
             arr = self.generate_expression(node.array)
+            arr_t = self.infer_expression_type(node.array)
+            if arr_t == "str":
+                return f"((int32_t)strlen({arr}))"
             return f"STKT_SLICE_LEN({arr})"
 
         elif isinstance(node, Pop_Node):
@@ -312,6 +320,9 @@ class CodeGenerator:
         elif isinstance(node, Call_Node):
             if node.ident == "len":
                 arr = self.generate_expression(node.args[0])
+                arr_t = self.infer_expression_type(node.args[0])
+                if arr_t == "str":
+                    return f"((int32_t)strlen({arr}))"
                 return f"STKT_SLICE_LEN({arr})"
             if node.ident == "pop":
                 arr = self.generate_expression(node.args[0])
@@ -443,7 +454,13 @@ class CodeGenerator:
         for p in node.param:
             p_name = p.ident
             p_type = p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name)
-            p_c_type = C_TYPEMAP.get(p_type, 'int32_t')
+            if p_type.startswith("[") and p_type.endswith("]"):
+                elem_t = p_type[1:-1]
+                p_c_type = f"stkt_slice_{elem_t}"
+                self.variable[p_name] = p_c_type
+            else:
+                p_c_type = C_TYPEMAP.get(p_type, 'int32_t')
+                self.variable[p_name] = p_type
             param_list.append(f"{p_c_type} {p_name}")
         param_str = ", ".join(param_list) if param_list else "void"
 
@@ -704,7 +721,8 @@ class CodeGenerator:
 
     def gen_Sync_Node(self, node):
         raw_path = node.m_path.value if hasattr(node.m_path, "value") else str(node.m_path)
-        with open(raw_path, "r") as f:
+        module_path = resolve_module_path(raw_path)
+        with open(module_path, "r") as f:
             code = f.read()
         from parse import parser
         from lexicals import lexer

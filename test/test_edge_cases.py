@@ -368,3 +368,82 @@ def test_sync_nonexistent_module_rejected():
     sync "/path/that/does/not/exist.stkt"
     """
     assert_semantic_error(code, "does not exist")
+
+def test_sync_auto_resolve_standard_library(run_stkt):
+    code = """
+    sync "math"
+    let m: i32 = max(10, 50)
+    let s: i32 = sqrt_int(100)
+    let g: i32 = gcd(12, 18)
+    onscreen "m={m}, s={s}, g={g}"
+    """
+    output = run_stkt(code)
+    assert "m=50, s=10, g=6" in output
+
+def test_sync_auto_resolve_standard_library(run_stkt):
+    code = """
+    sync "math"
+    let m: i32 = max(10, 50)
+    let s: i32 = sqrt_int(100)
+    let g: i32 = gcd(12, 18)
+    onscreen "m={m}, s={s}, g={g}"
+    """
+    output = run_stkt(code)
+    assert "m=50, s=10, g=6" in output
+
+def test_sync_auto_resolve_standard_library(run_stkt):
+    code = """
+    sync "math"
+    let m: i32 = max(10, 50)
+    let s: i32 = sqrt_int(100)
+    let g: i32 = gcd(12, 18)
+    onscreen "m={m}, s={s}, g={g}"
+    """
+    output = run_stkt(code)
+    assert "m=50, s=10, g=6" in output
+
+def test_sync_collections_standard_library(run_stkt):
+    code = """
+    sync "collections"
+    let list: [i32] = [10, 50, 20, 50, 30]
+    let tot: i32 = sum_i32(list)
+    let mx: i32 = max_elem(list)
+    let mn: i32 = min_elem(list)
+    let cnt: i32 = count_elem(list, 50)
+    let p1: i32 = index_of(list, 20)
+    let p2: i32 = index_of(list, 999)
+    let has20: bool = contain_i32(list, 20)
+    let has99: bool = contain_i32(list, 99)
+    onscreen "tot={tot}, mx={mx}, mn={mn}, cnt={cnt}, p1={p1}, p2={p2}, h1={has20}, h2={has99}"
+    """
+    output = run_stkt(code)
+    assert "tot=160, mx=50, mn=10, cnt=2, p1=2, p2=-1, h1=true, h2=false" in output
+
+def test_sync_algo_full_suite(run_stkt):
+    code = """
+    sync "algo"
+    let list: [i32] = [50, 10, 40, 20, 30]
+    sort_i32(list)
+    let idx30: i32 = binary_search(list, 30)
+    let idx99: i32 = binary_search(list, 99)
+    reverse_i32(list)
+    let first: i32 = list[0]
+    let last: i32 = list[4]
+    onscreen "idx30={idx30}, idx99={idx99}, first={first}, last={last}"
+    """
+    output = run_stkt(code)
+    assert "idx30=2, idx99=-1, first=50, last=10" in output
+
+def test_sync_string_standard_library(run_stkt):
+    code = """
+    sync "string"
+    let d1: bool = is_digit('7')
+    let d2: bool = is_digit('x')
+    let up: char = to_upper('m')
+    let low: char = to_lower('R')
+    let n: i32 = digit_to_int('8')
+    let c: char = int_to_digit(3)
+    onscreen "d1={d1}, d2={d2}, up={up}, low={low}, n={n}, c={c}"
+    """
+    output = run_stkt(code)
+    assert "d1=true, d2=false, up=M, low=r, n=8, c=3" in output

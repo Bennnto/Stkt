@@ -1,0 +1,11 @@
+id = "stkt"
+name = "Stkt"
+version = "0.1.0"
+schema_version = 1
+authors = ["Bennnto <ben@stkt.dev>"]
+description = "Stkt programming language support for Zed"
+repository = "https://github.com/Bennnto/Stkt"
+
+[grammars.stkt]
+repository = "https://github.com/Bennnto/tree-sitter-stkt"
+commit = "main"

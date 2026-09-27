@@ -1,6 +1,5 @@
 from pathlib import Path
 from parse import parser
-from codegen import CodeGenerator
 from lexicals import lexer
 from environment import Environment, Symbol
 from astnodes import (
@@ -61,6 +60,20 @@ NUMERIC_TYPES = {
 }
 
 
+def resolve_module_path(raw_name: str) -> Path:
+    p = Path(raw_name)
+    if p.exists() and p.is_file():
+        return p
+
+    p_with_ext = p.with_suffix(".stkt")
+    if p_with_ext.exists() and p_with_ext.is_file():
+        return p_with_ext
+
+    stdlib_p = Path("src/stdlib") / p_with_ext.name
+    if stdlib_p.exists() and stdlib_p.is_file():
+        return stdlib_p
+    return p
+
 class SemanticError(Exception):
     pass
 
@@ -70,6 +83,7 @@ class SemanticAnalyze:
         self.environment = Environment()
         self.current_return_type = None
         self.loop_depth = 0
+
 
     def validate_call(self, proc_symbol, node: Call_Node):
         if proc_symbol.fields is not None:
@@ -521,10 +535,9 @@ class SemanticAnalyze:
             if self.environment.parent is not None :
                 raise SemanticError(f"Sync statements are only allowed at top level scope")
             raw_path = node.m_path.value if hasattr(node.m_path, "value") else str(node.m_path)
-            module_path = Path(raw_path)
-
+            module_path = resolve_module_path(raw_path)
             if not module_path.exists():
-                raise SemanticError(f"Module '{node.m_path} does not exist")
+                raise SemanticError(f"Module '{node.m_path}' does not exist")
             with open(module_path, "r") as f:
                 code = f.read()
             module_ast = parser.parse(code, lexer=lexer)
@@ -589,7 +602,7 @@ class SemanticAnalyze:
                 return "bool"
 
             if node.op in ("<", ">", "<=", ">="):
-                if left_type != right_type or left_type not in NUMERIC_TYPES:
+                if left_type != right_type or (left_type not in NUMERIC_TYPES and left_type != "char"):
                     raise SemanticError(f"Operator {node.op} not compatible with '{left_type}' and '{right_type}' types")
                 return "bool"
 
@@ -718,8 +731,15 @@ class SemanticAnalyze:
 
         if isinstance(node, Indexaccess_Node):
             arr_type = self.infer_type(node.array)
+            if arr_type == "str":
+                idx_type = self.infer_type(node.index)
+                norm_idx = "i32" if idx_type == "int" else idx_type
+                if norm_idx not in INTEGER_TYPES:
+                    raise SemanticError(f"String index must be an integer, got '{idx_type}'")
+                return "char"
+
             if not (arr_type.startswith("[") and arr_type.endswith("]")):
-                raise SemanticError(f"Index access must be on an array, got '{arr_type}'")
+                raise SemanticError(f"Index access must be on an array or string, got '{arr_type}'")
 
             idx_type = self.infer_type(node.index)
             norm_idx = "i32" if idx_type == "int" else idx_type

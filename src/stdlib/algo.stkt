@@ -1,0 +1,51 @@
+// ======================================================
+// Stkt Standard Library: Algorithms (algo.stkt)
+// ======================================================
+
+export proc sort_i32 :void(arr: [i32]) {
+    let n: i32 = len(arr)
+    let i: i32 = 0
+
+    while i < n {
+        let j: i32 = 0
+        while j < n - i - 1 {
+            if arr[j] > arr[j + 1] {
+                let temp: i32 = arr[j]
+                arr[j] = arr[j + 1]
+                arr[j + 1] = temp
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+}
+
+export proc binary_search :i32(arr: [i32], target: i32) {
+    let low: i32 = 0
+    let high :i32 = len(arr) - 1
+    while low <= high {
+        let mid :i32 = (low + high)/ 2
+        if arr[mid] == target {
+            return mid
+        } else {
+            if arr[mid] < target {
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+    }
+    return -1
+}
+
+export proc reverse_i32: void(arr: [i32]){
+    let left :i32 = 0
+    let right :i32 = len(arr) - 1
+    while left < right {
+        let temp :i32 = arr[left]
+        arr[left] = arr[right]
+        arr[right] = temp
+        left = left + 1
+        right = right - 1
+    }
+}

@@ -62,7 +62,7 @@ precedence = (
     ("left", "GT", "LT", "GE", "LE", "LSHFT", "RSHFT"),
     ("left", "ADD", "SUB"),
     ("left", "MUL", "DIV", "MOD"),
-    ("right", "NOT", "BIT_NOT", "UMINUS"),
+    ("right", "NOT", "BIT_NOT", "UMINUS", "CAST"),
     ("left", "LBRACKET"),
 )
 
@@ -128,8 +128,13 @@ def p_type(p):
             | BOOL_TYPE
             | CHAR_TYPE
             | FLT_TYPE
-            | VOID'''
-    p[0] = Type_Node(type_name=p[1])
+            | VOID
+            | LBRACKET type RBRACKET'''
+    if len(p) == 2:
+        p[0] = Type_Node(type_name=p[1])
+    else:
+        inner = p[2].type_name if hasattr(p[2], "type_name") else str(p[2])
+        p[0] = Type_Node(type_name=f"[{inner}]")
 
 import re
 
@@ -198,7 +203,7 @@ def p_expr_ternary(p):
     p[0] = Ternary_Node(cond=p[1], true_block=p[3], false_block=p[5])
 
 def p_expr_cast(p):
-    '''expression : LPAREN type RPAREN expression'''
+    '''expression : LPAREN type RPAREN expression %prec CAST'''
     p[0] = Cast_Node(target_type=p[2], value=p[4])
 
 #-----------------------------------

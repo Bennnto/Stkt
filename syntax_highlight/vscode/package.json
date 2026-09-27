@@ -1,0 +1,35 @@
+{
+  "name": "stkt-syntax",
+  "displayName": "Stkt Language Support",
+  "description": "Syntax highlighting and language support for the Stkt programming language (.stkt)",
+  "version": "1.0.0",
+  "publisher": "stkt-lang",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "stkt",
+        "aliases": [
+          "Stkt",
+          "stkt"
+        ],
+        "extensions": [
+          ".stkt"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "stkt",
+        "scopeName": "source.stkt",
+        "path": "./syntaxes/stkt.tmLanguage.json"
+      }
+    ]
+  }
+}

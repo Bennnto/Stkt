@@ -1,6 +1,12 @@
-//Stkt Standard Library : Math
+// ==========================================
+// Stkt Standard Library: Math (math.stkt)
+// ==========================================
 
-export proc abs :i32 (n: i32) {
+// ------------------------------------------
+// 1. Basic Arithmetic, Bounds & Properties
+// ------------------------------------------
+
+export proc abs :i32(n: i32) {
     if n < 0 {
         return -n
     } else {
@@ -8,7 +14,19 @@ export proc abs :i32 (n: i32) {
     }
 }
 
-export proc max :i32 (a: i32, b: i32) {
+export proc sign :i32(n: i32) {
+    if n > 0 {
+        return 1
+    } else {
+        if n < 0 {
+            return -1
+        } else {
+            return 0
+        }
+    }
+}
+
+export proc max :i32(a: i32, b: i32) {
     if a > b {
         return a
     } else {
@@ -16,7 +34,7 @@ export proc max :i32 (a: i32, b: i32) {
     }
 }
 
-export proc min :i32 (a: i32, b: i32) {
+export proc min :i32(a: i32, b: i32) {
     if a < b {
         return a
     } else {
@@ -24,7 +42,38 @@ export proc min :i32 (a: i32, b: i32) {
     }
 }
 
-export proc pow_int :i32 (base: i32, exp: i32) {
+export proc clamp :i32(v: i32, low: i32, high: i32) {
+    if v < low {
+        return low
+    } else {
+        if v > high {
+            return high
+        } else {
+            return v
+        }
+    }
+}
+
+export proc in_range :bool(v: i32, low: i32, high: i32) {
+    return v >= low && v <= high
+}
+
+export proc is_even :bool(n: i32) {
+    return n % 2 == 0
+}
+
+export proc is_odd :bool(n: i32) {
+    return n % 2 != 0
+}
+
+// ------------------------------------------
+// 2. Powers, Roots & Exponents
+// ------------------------------------------
+
+export proc pow_int :i32(base: i32, exp: i32) {
+    if exp < 0 {
+        return 0
+    }
     let res: i32 = 1
     loop exp {
         res = res * base
@@ -32,22 +81,175 @@ export proc pow_int :i32 (base: i32, exp: i32) {
     return res
 }
 
-export proc floor :i32 (n: i32) {
-    int_part = x - (x % 1)
-    if x < 0 && x % 1 != 0 {
-        return int_part - 1
+export proc sqrt_int :i32(n: i32) {
+    if n <= 0 {
+        return 0
     }
-    return int_part
+    if n == 1 {
+        return 1
+    }
+    let x: i32 = n / 2
+    let next_x: i32 = (x + n / x) / 2
+    while next_x < x {
+        x = next_x
+        next_x = (x + n / x) / 2
+    }
+    return x
 }
 
-export clamp :i32 (v: i32, low: i32, hight: i32) {
-    if v < low {
-        return low
-    } else {
-        if v > hight {
-            return hight
-        } else {
-            return v
+export proc cbrt_int :i32(n: i32) {
+    if n <= 0 {
+        return 0
+    }
+    if n == 1 {
+        return 1
+    }
+    let x: i32 = n / 3
+    let next_x: i32 = (2 * x + n / (x * x)) / 3
+    while next_x < x {
+        x = next_x
+        next_x = (2 * x + n / (x * x)) / 3
+    }
+    return x
+}
+
+export proc hypot_int :i32(a: i32, b: i32) {
+    return sqrt_int((a * a) + (b * b))
+}
+
+// ------------------------------------------
+// 3. Number Theory & Divisibility
+// ------------------------------------------
+
+export proc gcd :i32(a: i32, b: i32) {
+    let x: i32 = abs(a)
+    let y: i32 = abs(b)
+    while y != 0 {
+        let t: i32 = y
+        y = x % y
+        x = t
+    }
+    return x
+}
+
+export proc lcm :i32(a: i32, b: i32) {
+    if a == 0 || b == 0 {
+        return 0
+    }
+    return abs(a * b) / gcd(a, b)
+}
+
+export proc is_prime :bool(n: i32) {
+    if n <= 1 {
+        return false
+    }
+    if n <= 3 {
+        return true
+    }
+    if n % 2 == 0 || n % 3 == 0 {
+        return false
+    }
+    let i: i32 = 5
+    while i * i <= n {
+        if n % i == 0 || n % (i + 2) == 0 {
+            return false
+        }
+        i = i + 6
+    }
+    return true
+}
+
+export proc next_prime :i32(n: i32) {
+    if n <= 1 {
+        return 2
+    }
+    let prime: i32 = n
+    while true {
+        prime = prime + 1
+        if is_prime(prime) {
+            return prime
         }
     }
+}
+
+export proc factorial :i32(n: i32) {
+    if n < 0 {
+        return 0
+    }
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+
+export proc permutations :i32(n: i32, k: i32) {
+    if k < 0 || k > n {
+        return 0
+    }
+    return factorial(n) / factorial(n - k)
+}
+
+export proc combinations :i32(n: i32, k: i32) {
+    if k < 0 || k > n {
+        return 0
+    }
+    return factorial(n) / (factorial(k) * factorial(n - k))
+}
+
+// ------------------------------------------
+// 4. Bitwise Operations & Binary Manipulations
+// ------------------------------------------
+
+export proc is_power_of_two :bool(n: i32) {
+    if n <= 0 {
+        return false
+    }
+    return (n & (n - 1)) == 0
+}
+
+export proc next_power_of_two :i32(n: i32) {
+    if n <= 0 {
+        return 1
+    }
+    let p: i32 = 1
+    while p < n {
+        p = p << 1
+    }
+    return p
+}
+
+export proc count_ones :i32(n: i32) {
+    let count: i32 = 0
+    let x: i32 = n
+    while x != 0 {
+        x = x & (x - 1)
+        count = count + 1
+    }
+    return count
+}
+
+export proc count_zeros :i32(n: i32) {
+    return 32 - count_ones(n)
+}
+
+export proc rotate_left :i32(n: i32, shift: i32) {
+    let s: i32 = shift % 32
+    if s < 0 {
+        s = s + 32
+    }
+    if s == 0 {
+        return n
+    }
+    return (n << s) | (n >> (32 - s))
+}
+
+export proc rotate_right :i32(n: i32, shift: i32) {
+    let s: i32 = shift % 32
+    if s < 0 {
+        s = s + 32
+    }
+    if s == 0 {
+        return n
+    }
+    return (n >> s) | (n << (32 - s))
 }
