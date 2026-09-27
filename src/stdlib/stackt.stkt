@@ -1,0 +1,31 @@
+// ==========================================
+// Stkt Standard Library: Stack (math.stkt)
+// ==========================================
+
+export proc stack_is_empty: bool(s: [i32]){
+    if len(s) == 0 {
+        return true
+    }
+    return false
+}
+
+export proc stack_push: void(s: [i32], val: i32){
+    append(s, val)
+}
+
+export proc stack_peek: i32(s: [i32]) {
+    if stack_is_empty(s) {
+        return -1
+    }else {
+        let i: i32 = len(s) -1
+        return s[i]
+    }
+}
+
+export proc stack_pop: i32(s: [i32]){
+    if stack_is_empty(s) {
+        return -1
+    } else {
+        return pop(s)
+    }
+}

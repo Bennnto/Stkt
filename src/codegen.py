@@ -72,6 +72,7 @@ class CodeGenerator:
         self._indent_level = 0
         self._indent_str = ""
         self.functions = []
+        self.namespaces = {}
         self.lines = []
         self.lambda_count = 0
 
@@ -132,6 +133,13 @@ class CodeGenerator:
             "static inline __attribute__((unused)) char stkt_scan_char() { char c = 0; if (scanf(\" %c\", &c) != 1) return 0; return c; }",
             "static inline __attribute__((unused)) char* stkt_scan_str() { char* b = (char*)malloc(1024); if (!b) return \"\"; if (scanf(\"%1023s\", b) != 1) b[0] = 0; return b; }",
             "static inline __attribute__((unused)) bool stkt_scan_bool() { char b[16]; if (scanf(\"%15s\", b) != 1) return false; return (strcmp(b, \"true\") == 0 || strcmp(b, \"1\") == 0); }",
+            "",
+            "/* Stkt Standard File IO Runtime */",
+            "static inline __attribute__((unused)) bool stkt_file_exists(const char* path) { if (!path) return false; FILE* f = fopen(path, \"r\"); if (f) { fclose(f); return true; } return false; }",
+            "static inline __attribute__((unused)) bool stkt_file_write(const char* path, const char* text) { if (!path) return false; FILE* f = fopen(path, \"w\"); if (!f) return false; if (text) { fputs(text, f); } fclose(f); return true; }",
+            "static inline __attribute__((unused)) char* stkt_file_read(const char* path) { if (!path) return \"\"; FILE* f = fopen(path, \"rb\"); if (!f) return \"\"; fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET); if (sz < 0) { fclose(f); return \"\"; } char* buf = (char*)malloc(sz + 1); if (!buf) { fclose(f); return \"\"; } size_t n = fread(buf, 1, sz, f); buf[n] = 0; fclose(f); return buf; }",
+            "static inline __attribute__((unused)) bool stkt_file_append(const char* path, const char* text) { if (!path) return false; FILE* f = fopen(path, \"a\"); if (!f) return false; if (text) { fputs(text, f); } fclose(f); return true; }",
+            "static inline __attribute__((unused)) int32_t stkt_file_size(const char* path) { if (!path) return -1; FILE* f = fopen(path, \"rb\"); if (!f) return -1; fseek(f, 0, SEEK_END); long sz = ftell(f); fclose(f); return (int32_t)sz; }",
         ]
         if isinstance(ast, Program_Node):
             statements = ast.statements
@@ -271,6 +279,11 @@ class CodeGenerator:
         elif isinstance(node, Binaryops_Node):
             left = self.generate_expression(node.left)
             right = self.generate_expression(node.right)
+            lt = self.infer_expression_type(node.left)
+            rt = self.infer_expression_type(node.right)
+            if (lt == "str" or rt == "str") and node.op in ("==", "!="):
+                cmp_op = "==" if node.op == "==" else "!="
+                return f"(strcmp({left}, {right}) {cmp_op} 0)"
             return f"({left} {node.op} {right})"
 
         elif isinstance(node, Lambda_Node):
@@ -393,6 +406,17 @@ class CodeGenerator:
             if "stkt_slice" in arr_var_type:
                 return f"{arr}.data[{idx}]"
             return f"{arr}[{idx}]"
+
+        elif isinstance(node, Typeaccess_Node):
+            if node.ident in self.namespaces:
+                if isinstance(node.target, Call_Node):
+                    args = [self.generate_expression(a) for a in node.target.args]
+                    arg_str = ", ".join(args)
+                    return f"{node.ident}_{node.target.ident}({arg_str})"
+                target_str = self.generate_expression(node.target)
+                return f"{node.ident}_{target_str}"
+            target_str = self.generate_expression(node.target) if hasattr(node.target, "ident") else str(node.target)
+            return f"{node.ident}.{target_str}"
 
     def gen_Annassign_Node(self, node: Annassign_Node):
         ident = node.ident
@@ -728,10 +752,30 @@ class CodeGenerator:
         from lexicals import lexer
         module_ast = parser.parse(code, lexer=lexer)
         stmts = module_ast.statements if hasattr(module_ast, 'statements') else module_ast
+        alias = getattr(node, "alias", None)
+        if alias:
+            self.namespaces[alias] = set()
         for stmt in stmts:
             if isinstance(stmt, Procedure_Node) and getattr(stmt, "is_exported", False):
                 self.gen_Procedure_Node(stmt)
                 self.lines.append("")
+                if alias:
+                    self.namespaces[alias].add(stmt.ident)
+                    # Emit alias wrapper: ret_c alias_ident(params) { return ident(args); }
+                    ret_type = stmt.return_type.type_name if hasattr(stmt.return_type, "type_name") else str(stmt.return_type)
+                    ret_c = C_TYPEMAP.get(ret_type, "int32_t")
+                    p_decls = []
+                    p_args = []
+                    for p in stmt.param:
+                        p_t = p.type_name.type_name if hasattr(p.type_name, "type_name") else str(p.type_name)
+                        p_c = f"stkt_slice_{p_t[1:-1]}" if (p_t.startswith("[") and p_t.endswith("]")) else C_TYPEMAP.get(p_t, "int32_t")
+                        p_decls.append(f"{p_c} {p.ident}")
+                        p_args.append(p.ident)
+                    decl_str = ", ".join(p_decls) if p_decls else "void"
+                    call_str = ", ".join(p_args)
+                    call_stmt = f"{stmt.ident}({call_str});" if ret_c == "void" else f"return {stmt.ident}({call_str});"
+                    self.emit(f"static inline {ret_c} {alias}_{stmt.ident}({decl_str}) {{ {call_stmt} }}")
+                    self.lines.append("")
             elif isinstance(stmt, Typedecl_Node):
                 self.gen_Typedecl_Node(stmt)
                 self.lines.append("")

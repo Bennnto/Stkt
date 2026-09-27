@@ -1,0 +1,32 @@
+// ======================================================
+// Stkt Standard Library: File & IO (io.stkt)
+// ======================================================
+
+// Check if a file exists on disk
+export proc file_exists :bool(path: str) {
+    return stkt_file_exists(path)
+}
+
+// Write text content to a file (creates or overwrites)
+// Returns true on success, false on failure
+export proc write_text :bool(path: str, content: str) {
+    return stkt_file_write(path, content)
+}
+
+// Read the entire contents of a file into a string
+// Returns the string content, or "" if the file cannot be read
+export proc read_text :str(path: str) {
+    return stkt_file_read(path)
+}
+
+export proc append_text :bool(path: str, content: str) {
+    return stkt_file_append(path, content)
+}
+
+export proc file_size :i32(path: str) {
+    if file_exists(path) {
+        return stkt_file_size(path)
+    } else {
+        return -1
+    }
+}

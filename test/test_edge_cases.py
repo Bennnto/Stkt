@@ -447,3 +447,73 @@ def test_sync_string_standard_library(run_stkt):
     """
     output = run_stkt(code)
     assert "d1=true, d2=false, up=M, low=r, n=8, c=3" in output
+
+def test_sync_string_search_and_equality(run_stkt):
+    code = """
+    sync "string"
+    let word: str = "banana"
+    let has_n: bool = str_contains(word, 'n')
+    let pos_a: i32 = str_index_of(word, 'a')
+    let cnt_a: i32 = str_count(word, 'a')
+    let w1: str = "apple"
+    let w2: str = "apple"
+    let w3: str = "orange"
+    let same: bool = (w1 == w2)
+    let diff: bool = (w1 != w3)
+    onscreen "has_n={has_n}, pos_a={pos_a}, cnt_a={cnt_a}, same={same}, diff={diff}"
+    """
+    output = run_stkt(code)
+    assert "has_n=true, pos_a=1, cnt_a=3, same=true, diff=true" in output
+
+def test_sync_namespaced_imports_full(run_stkt):
+    code = """
+    sync "math" as m
+    sync "string" as s
+    let sq: i32 = m.sqrt_int(144)
+    let p: bool = m.is_prime(17)
+    let up: char = s.to_upper('w')
+    let d: bool = s.is_digit('8')
+    onscreen "sq={sq}, p={p}, up={up}, d={d}"
+    """
+    output = run_stkt(code)
+    assert "sq=12, p=true, up=W, d=true" in output
+
+def test_sync_namespaced_unknown_procedure_rejected():
+    code = """
+    sync "math" as m
+    let bad: i32 = m.unknown_func(10)
+    """
+    assert_semantic_error(code, "Function 'unknown_func' not found in namespace 'm'")
+
+def test_sync_io_file_operations(run_stkt):
+    code = """
+    sync "io" as io
+    let path: str = "/tmp/stkt_pytest_file.txt"
+    let w_ok: bool = io.write_text(path, "Stkt persistent data!")
+    let ex: bool = io.file_exists(path)
+    let txt: str = io.read_text(path)
+    onscreen "w={w_ok}, ex={ex}, txt={txt}"
+    """
+    output = run_stkt(code)
+    import os
+    if os.path.exists("/tmp/stkt_pytest_file.txt"):
+        os.remove("/tmp/stkt_pytest_file.txt")
+    assert "w=true, ex=true, txt=Stkt persistent data!" in output
+
+def test_sync_io_append_and_file_size(run_stkt):
+    code = """
+    sync "io" as io
+    let path: str = "/tmp/stkt_pytest_append.txt"
+    let w1: bool = io.write_text(path, "Line1\\n")
+    let s1: i32 = io.file_size(path)
+    let w2: bool = io.append_text(path, "Line2\\n")
+    let s2: i32 = io.file_size(path)
+    let txt: str = io.read_text(path)
+    onscreen "s1={s1}, s2={s2}, txt={txt}"
+    """
+    output = run_stkt(code)
+    import os
+    if os.path.exists("/tmp/stkt_pytest_append.txt"):
+        os.remove("/tmp/stkt_pytest_append.txt")
+    assert "s1=6, s2=12" in output
+    assert "Line1\nLine2" in output

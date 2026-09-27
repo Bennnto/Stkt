@@ -113,6 +113,7 @@ reserved_key = {
     'pop' : 'POP',
     'sync' : 'SYNC',
     'export' : 'EXPORT',
+    'as' : 'AS',
 }
 
 def t_IDENT(t):

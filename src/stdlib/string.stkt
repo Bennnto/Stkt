@@ -40,3 +40,38 @@ export proc int_to_digit: char(n: i32) {
         return '0'
     }
 }
+
+export proc str_contains: bool(s: str, target: char){
+    let i: i32 = 0
+    while i < len(s) {
+        if s[i] == target {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+export proc str_index_of: i32(s: str, target: char){
+    let i: i32 = 0
+    while i < len(s) {
+        if s[i] == target{
+            return i
+
+        }
+        i = i + 1
+    }
+    return -1 // return -1 if not found
+}
+
+export proc str_count: i32(s: str, target: char){
+    let i: i32 =0
+    let count: i32 =0
+    while i < len(s) {
+        if s[i] == target {
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}

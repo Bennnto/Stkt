@@ -83,6 +83,13 @@ class SemanticAnalyze:
         self.environment = Environment()
         self.current_return_type = None
         self.loop_depth = 0
+        self.namespaces = {}
+        # Builtin file primitives
+        self.environment.define(Symbol(ident="stkt_file_exists", type_name="bool", param_type=["str"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_file_write", type_name="bool", param_type=["str", "str"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_file_read", type_name="str", param_type=["str"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_file_append", type_name="bool", param_type=["str", "str"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_file_size", type_name="i32", param_type=["str"], is_exported=True))
 
 
     def validate_call(self, proc_symbol, node: Call_Node):
@@ -355,7 +362,7 @@ class SemanticAnalyze:
                 self.analyse(node.elements)
                 elems_type = self.infer_type(node.elements)
                 expected_type = f"[{norm_elem}]"
-                if elems_type != expected_type:
+                if elems_type != expected_type and elems_type != "[void]":
                     raise SemanticError(f"Slice '{ident}' expected elements of type '{expected_type}', got '{elems_type}'")
             # Define as slice
             sym = Symbol(ident=ident, type_name=f"[{norm_elem}]")
@@ -548,8 +555,11 @@ class SemanticAnalyze:
                 self.analyse(module_ast)
             finally:
                 self.environment = prev_env
-                for sym in module_env.symbols.values():
-                    if sym.is_exported:
+                exported = {sym.ident: sym for sym in module_env.symbols.values() if sym.is_exported}
+                if getattr(node, "alias", None):
+                    self.namespaces[node.alias] = exported
+                else:
+                    for sym in exported.values():
                         self.environment.define(sym)
             return "void"
 
@@ -775,6 +785,16 @@ class SemanticAnalyze:
             return norm_field_type
 
         if isinstance(node, Typeaccess_Node):
+            if node.ident in self.namespaces:
+                ns = self.namespaces[node.ident]
+                if isinstance(node.target, Call_Node):
+                    fn_name = node.target.ident
+                    if fn_name not in ns:
+                        raise SemanticError(f"Function '{fn_name}' not found in namespace '{node.ident}'")
+                    proc_sym = ns[fn_name]
+                    self.validate_call(proc_sym, node.target)
+                    return proc_sym.type_name
+                raise SemanticError(f"Invalid access on namespace '{node.ident}'")
             # Resolve object type
             obj_name = node.ident
             obj_sym = self.environment.resolve(obj_name)
