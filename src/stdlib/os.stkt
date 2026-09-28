@@ -1,0 +1,17 @@
+// ==========================================
+// Stkt Standard Library: OS (os.stkt)
+// ==========================================
+//
+
+export proc arg_count: i32(){
+    return stkt_args_count()
+}
+
+export proc get_args: [str](){
+    return stkt_get_args()
+}
+
+export proc get_env: str(key: str){
+    return stkt_get_env(key)
+
+}

@@ -45,6 +45,7 @@ from astnodes import (
     Append_Node,
     Pop_Node,
     Len_Node,
+    IsOk_Node,
     Sync_Node,
     Export_Node
 )
@@ -90,6 +91,13 @@ class SemanticAnalyze:
         self.environment.define(Symbol(ident="stkt_file_read", type_name="str", param_type=["str"], is_exported=True))
         self.environment.define(Symbol(ident="stkt_file_append", type_name="bool", param_type=["str", "str"], is_exported=True))
         self.environment.define(Symbol(ident="stkt_file_size", type_name="i32", param_type=["str"], is_exported=True))
+        # Builtin OS primitives
+        self.environment.define(Symbol(ident="stkt_args_count", type_name="i32", param_type=[], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_get_args", type_name="[str]", param_type=[], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_get_env", type_name="str", param_type=["str"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_exit", type_name="void", param_type=["i32"], is_exported=True))
+        self.environment.define(Symbol(ident="__stkt_set_err", type_name="void", param_type=[], is_exported=True))
+        self.environment.define(Symbol(ident="__stkt_clear_err", type_name="void", param_type=[], is_exported=True))
 
 
     def validate_call(self, proc_symbol, node: Call_Node):
@@ -787,6 +795,10 @@ class SemanticAnalyze:
         if isinstance(node, Typeaccess_Node):
             if node.ident in self.namespaces:
                 ns = self.namespaces[node.ident]
+                if isinstance(node.target, IsOk_Node):
+                    wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
+                    desugared_isok = IsOk_Node(expr=wrapped_call, msg=node.target.msg)
+                    return self.infer_type(desugared_isok)
                 if isinstance(node.target, Call_Node):
                     fn_name = node.target.ident
                     if fn_name not in ns:
@@ -812,3 +824,12 @@ class SemanticAnalyze:
                 raise SemanticError(f"Type '{obj_sym.type_name}' has no field '{field_name}'")
 
             return struct_sym.fields[field_name]
+
+        if isinstance(node, IsOk_Node):
+            expr_type = self.infer_type(node.expr)
+            expr_norm = "i32" if expr_type == "int" else ("f32" if expr_type == "float" else str(expr_type))
+            msg_type = self.infer_type(node.msg)
+            msg_norm = "i32" if msg_type == "int" else ("f32" if msg_type == "float" else str(msg_type))
+            if msg_norm != "str" :
+                raise SemanticErrror(f"Message type expected 'str' type got '{msg_norm}' type")
+            return expr_norm

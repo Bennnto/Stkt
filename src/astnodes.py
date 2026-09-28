@@ -1,3 +1,4 @@
+from ast import expr
 from dataclasses import dataclass, field
 from typing import Optional, List
 
@@ -234,3 +235,11 @@ class Export_Node(Node):
 class Sync_Node(Node):
     m_path : str
     alias : Optional[str] = None
+
+
+@dataclass
+class Isok_Node(Node):
+    expr : Node
+    msg : str
+
+IsOk_Node = Isok_Node

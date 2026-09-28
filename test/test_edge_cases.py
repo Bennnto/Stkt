@@ -517,3 +517,88 @@ def test_sync_io_append_and_file_size(run_stkt):
         os.remove("/tmp/stkt_pytest_append.txt")
     assert "s1=6, s2=12" in output
     assert "Line1\nLine2" in output
+
+def test_sync_stack_data_structure(run_stkt):
+    code = """
+    sync "stackt" as st
+    let my_stack: [i32] = []
+    let e1: bool = st.stack_is_empty(my_stack)
+    st.stack_push(my_stack, 100)
+    st.stack_push(my_stack, 200)
+    st.stack_push(my_stack, 300)
+    let peek1: i32 = st.stack_peek(my_stack)
+    let pop1: i32 = st.stack_pop(my_stack)
+    let pop2: i32 = st.stack_pop(my_stack)
+    let peek2: i32 = st.stack_peek(my_stack)
+    let pop3: i32 = st.stack_pop(my_stack)
+    let e2: bool = st.stack_is_empty(my_stack)
+    onscreen "e1={e1}, peek1={peek1}, pop1={pop1}, pop2={pop2}, peek2={peek2}, pop3={pop3}, e2={e2}"
+    """
+    output = run_stkt(code)
+    assert "e1=true, peek1=300, pop1=300, pop2=200, peek2=100, pop3=100, e2=true" in output
+
+def test_sync_queue_data_structure(run_stkt):
+    code = """
+    sync "queue" as q
+    let my_queue: [i32] = []
+    let e1: bool = q.queue_is_empty(my_queue)
+    q.queue_enqueue(my_queue, 10)
+    q.queue_enqueue(my_queue, 20)
+    q.queue_enqueue(my_queue, 30)
+    let f1: i32 = q.queue_front(my_queue)
+    let d1: i32 = q.queue_dequeue(my_queue)
+    let f2: i32 = q.queue_front(my_queue)
+    let d2: i32 = q.queue_dequeue(my_queue)
+    let d3: i32 = q.queue_dequeue(my_queue)
+    let e2: bool = q.queue_is_empty(my_queue)
+    onscreen "e1={e1}, f1={f1}, d1={d1}, f2={f2}, d2={d2}, d3={d3}, e2={e2}"
+    """
+    output = run_stkt(code)
+    assert "e1=true, f1=10, d1=10, f2=20, d2=20, d3=30, e2=true" in output
+
+def test_sync_string_is_palindrome(run_stkt):
+    code = """
+    sync "string" as s
+    let p1: bool = s.is_palindrome("racecar")
+    let p2: bool = s.is_palindrome("noon")
+    let p3: bool = s.is_palindrome("hello")
+    let p4: bool = s.is_palindrome("z")
+    onscreen "p1={p1}, p2={p2}, p3={p3}, p4={p4}"
+    """
+    output = run_stkt(code)
+    assert "p1=true, p2=true, p3=false, p4=true" in output
+
+def test_sync_string_parse_int(run_stkt):
+    code = """
+    sync "string" as s
+    let n1: i32 = s.parse_int("123")
+    let n2: i32 = s.parse_int("-456")
+    let n3: i32 = s.parse_int("0")
+    let n4: i32 = s.parse_int("98765")
+    let sum: i32 = n1 + n2
+    onscreen "n1={n1}, n2={n2}, n3={n3}, n4={n4}, sum={sum}"
+    """
+    output = run_stkt(code)
+    assert "n1=123, n2=-456, n3=0, n4=98765, sum=-333" in output
+
+def test_sync_os_cli_arguments(run_stkt):
+    code = """
+    sync "os" as os
+    let count: i32 = os.arg_count()
+    let args: [str] = os.get_args()
+    onscreen "count={count}"
+    """
+    output = run_stkt(code)
+    assert "count=1" in output
+
+def test_sync_string_int_to_str(run_stkt):
+    code = """
+    sync "string" as s
+    let s1: str = s.int_to_str(425)
+    let s2: str = s.int_to_str(-108)
+    let s3: str = s.int_to_str(0)
+    let s4: str = s.int_to_str(7)
+    onscreen "s1={s1}, s2={s2}, s3={s3}, s4={s4}"
+    """
+    output = run_stkt(code)
+    assert "s1=425, s2=-108, s3=0, s4=7" in output

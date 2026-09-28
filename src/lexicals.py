@@ -28,7 +28,7 @@ tokens = (
     'LET', 'CONST', 'ASSIGN', 'IDENT', 'PROCEDURE', 'WHILE', 'IF', 'ELSE', 'LAMBDA',
     'FOR', 'TERNARY', 'RETURN', 'BREAK', 'CONTINUE', 'ONSCREEN', 'SCAN', 'ONKEY',
     'CASE', 'MATCH', 'DEFAULT', 'LOOP', 'STEP', 'TYPE_DEF', 'APPEND', 'LEN', 'POP',
-    'SYNC', 'EXPORT', 'AS',
+    'SYNC', 'EXPORT', 'AS', 'ISOK_Q',
 
 )
 
@@ -114,7 +114,12 @@ reserved_key = {
     'sync' : 'SYNC',
     'export' : 'EXPORT',
     'as' : 'AS',
+
 }
+
+def t_ISOK_Q(t):
+    r'isok\?'
+    return t
 
 def t_IDENT(t):
     r'[a-zA-Z_][a-zA-Z0-9_]*'

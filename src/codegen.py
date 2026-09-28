@@ -29,6 +29,7 @@ from astnodes import (
     Arraydecl_Node,
     Arrayliteral_Node,
     InterpolatedStr_Node,
+    IsOk_Node,
     Indexaccess_Node,
     Indexassign_Node,
     Case_Node,
@@ -44,9 +45,15 @@ from astnodes import (
     Export_Node,
     Sync_Node,
     Len_Node,
+    Isok_Node
 )
 
 C_TYPEMAP = {
+    '[i32]': 'stkt_slice_i32',
+    '[i64]': 'stkt_slice_i64',
+    '[f32]': 'stkt_slice_f32',
+    '[f64]': 'stkt_slice_f64',
+    '[str]': 'stkt_slice_str',
     'i8': 'int8_t',
     'i16': 'int16_t',
     'i32': 'int32_t',
@@ -105,22 +112,29 @@ class CodeGenerator:
             "#include <time.h>",
             "#include <setjmp.h>",
             "/* Stkt Dynamic Array / Slice Runtime */",
-            "#define STKT_SLICE_DEFINE(TYPE, NAME) typedef struct { TYPE* data; size_t len; size_t cap; } NAME;",
+            "#define STKT_SLICE_DEFINE(TYPE, NAME) \\",
+            "typedef struct { TYPE* data; size_t len; size_t cap; } __stkt_slice_buf_##NAME; \\",
+            "typedef struct { __stkt_slice_buf_##NAME* buf; } NAME;",
             "STKT_SLICE_DEFINE(int32_t, stkt_slice_i32)",
             "STKT_SLICE_DEFINE(int64_t, stkt_slice_i64)",
             "STKT_SLICE_DEFINE(float, stkt_slice_f32)",
             "STKT_SLICE_DEFINE(double, stkt_slice_f64)",
             "STKT_SLICE_DEFINE(char*, stkt_slice_str)",
-            "#define STKT_SLICE_INIT(s) do { (s).data = NULL; (s).len = 0; (s).cap = 0; } while(0)",
-            "#define STKT_SLICE_APPEND(s, val) do { \\",
-            "    if ((s).len >= (s).cap) { \\",
-            "        (s).cap = ((s).cap == 0) ? 4 : ((s).cap * 2); \\",
-            "        (s).data = realloc((s).data, (s).cap * sizeof(*(s).data)); \\",
-            "    } \\",
-            "    (s).data[(s).len++] = (val); \\",
+            "#define STKT_SLICE_INIT(s) do { \\",
+            "    (s).buf = malloc(sizeof(*((s).buf))); \\",
+            "    (s).buf->data = NULL; \\",
+            "    (s).buf->len = 0; \\",
+            "    (s).buf->cap = 0; \\",
             "} while(0)",
-            "#define STKT_SLICE_POP(s) ((s).data[--(s).len])",
-            "#define STKT_SLICE_LEN(s) ((int32_t)(s).len)",
+            "#define STKT_SLICE_APPEND(s, val) do { \\",
+            "    if ((s).buf->len >= (s).buf->cap) { \\",
+            "        (s).buf->cap = ((s).buf->cap == 0) ? 4 : ((s).buf->cap * 2); \\",
+            "        (s).buf->data = realloc((s).buf->data, (s).buf->cap * sizeof(*((s).buf->data))); \\",
+            "    } \\",
+            "    (s).buf->data[(s).buf->len++] = (val); \\",
+            "} while(0)",
+            "#define STKT_SLICE_POP(s) ((s).buf->data[--((s).buf->len)])",
+            "#define STKT_SLICE_LEN(s) ((int32_t)((s).buf->len))",
             "",
             "",
             "/* Stkt Standard Runtime Scanners */",
@@ -140,6 +154,29 @@ class CodeGenerator:
             "static inline __attribute__((unused)) char* stkt_file_read(const char* path) { if (!path) return \"\"; FILE* f = fopen(path, \"rb\"); if (!f) return \"\"; fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET); if (sz < 0) { fclose(f); return \"\"; } char* buf = (char*)malloc(sz + 1); if (!buf) { fclose(f); return \"\"; } size_t n = fread(buf, 1, sz, f); buf[n] = 0; fclose(f); return buf; }",
             "static inline __attribute__((unused)) bool stkt_file_append(const char* path, const char* text) { if (!path) return false; FILE* f = fopen(path, \"a\"); if (!f) return false; if (text) { fputs(text, f); } fclose(f); return true; }",
             "static inline __attribute__((unused)) int32_t stkt_file_size(const char* path) { if (!path) return -1; FILE* f = fopen(path, \"rb\"); if (!f) return -1; fseek(f, 0, SEEK_END); long sz = ftell(f); fclose(f); return (int32_t)sz; }",
+            "",
+            "/* Stkt Standard OS & Environment Runtime */",
+            "static int __stkt_argc = 0;",
+            "static char** __stkt_argv = NULL;",
+            "static inline __attribute__((unused)) int32_t stkt_args_count() { return (int32_t)__stkt_argc; }",
+            "static inline __attribute__((unused)) stkt_slice_str stkt_get_args() {",
+            "    stkt_slice_str args;",
+            "    STKT_SLICE_INIT(args);",
+            "    for (int i = 0; i < __stkt_argc; i++) {",
+            "        STKT_SLICE_APPEND(args, __stkt_argv[i]);",
+            "    }",
+            "    return args;",
+            "}",
+            "static inline __attribute__((unused)) char* stkt_get_env(const char* key) {",
+            "    if (!key) return \"\";",
+            "    char* v = getenv(key);\n    return v ? v : (char*)\"\";",
+            "    return v ? v : \"\";",
+            "}",
+            "static inline __attribute__((unused)) void stkt_exit(int32_t code) { exit(code); }",
+            "static bool __stkt_has_error = false;",
+            "static inline void __stkt_set_err() { __stkt_has_error = true; }",
+            "static inline void __stkt_clear_err() { __stkt_has_error = false; }",
+
         ]
         if isinstance(ast, Program_Node):
             statements = ast.statements
@@ -166,8 +203,10 @@ class CodeGenerator:
                 main_stmts.append(stmt)
 
         self.lines = main_lines
-        self.emit(f"int32_t {main_name}() {{")
+        self.emit(f"int32_t {main_name}(int argc, char** argv) {{")
         self.indent_level += 1
+        self.emit("__stkt_argc = argc;")
+        self.emit("__stkt_argv = argv;")
         for stmt in main_stmts:
             self.generate_statement(stmt)
         self.emit("return 0;")
@@ -269,8 +308,8 @@ class CodeGenerator:
 
             fmt_string = "".join(format_specifiers)
             arg_str = ", " + ", ".join(c_args) if c_args else ""
-            self.emit(f"char {buf_name}[1024];")
-            self.emit(f'snprintf({buf_name}, sizeof({buf_name}), "{fmt_string}"{arg_str});')
+            self.emit(f"char* {buf_name} = (char*)malloc(1024);")
+            self.emit(f'if ({buf_name}) snprintf({buf_name}, 1024, "{fmt_string}"{arg_str});')
             return buf_name
 
         elif isinstance(node, Ident_Node):
@@ -404,11 +443,15 @@ class CodeGenerator:
             # If variable is slice, access through data pointer
             arr_var_type = self.variable.get(arr, "")
             if "stkt_slice" in arr_var_type:
-                return f"{arr}.data[{idx}]"
+                return f"{arr}.buf->data[{idx}]"
             return f"{arr}[{idx}]"
 
         elif isinstance(node, Typeaccess_Node):
             if node.ident in self.namespaces:
+                if isinstance(node.target, IsOk_Node):
+                    wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
+                    desugared_isok = IsOk_Node(expr=wrapped_call, msg=node.target.msg)
+                    return self.generate_expression(desugared_isok)
                 if isinstance(node.target, Call_Node):
                     args = [self.generate_expression(a) for a in node.target.args]
                     arg_str = ", ".join(args)
@@ -417,6 +460,15 @@ class CodeGenerator:
                 return f"{node.ident}_{target_str}"
             target_str = self.generate_expression(node.target) if hasattr(node.target, "ident") else str(node.target)
             return f"{node.ident}.{target_str}"
+
+        elif isinstance(node, IsOk_Node):
+            expr_val = self.generate_expression(node.expr)
+            msg_val = self.generate_expression(node.msg)
+            expr_type = self.infer_expression_type(node.expr)
+            c_ret_type = C_TYPEMAP.get(expr_type, "int32_t")
+            temp_val = f"__val_{self.lambda_count}"
+            self.lambda_count += 1
+            return f"({{{c_ret_type} {temp_val} = {expr_val}; if (__stkt_has_error) {{ fprintf(stderr, \"[Error]: %s\\n\", {msg_val}); exit(1); }} {temp_val};}})"
 
     def gen_Annassign_Node(self, node: Annassign_Node):
         ident = node.ident
@@ -608,7 +660,7 @@ class CodeGenerator:
         val = self.generate_expression(node.value)
         var_t = self.variable.get(node.ident, "")
         if "stkt_slice" in var_t:
-            self.emit(f"{node.ident}.data[{idx}] = {val};")
+            self.emit(f"{node.ident}.buf->data[{idx}] = {val};")
         else:
             self.emit(f"{node.ident}[{idx}] = {val};")
 
@@ -721,22 +773,27 @@ class CodeGenerator:
 
 
     def gen_SliceDecl_Node(self, node):
+        from astnodes import Arrayliteral_Node
         elem_type_str = node.elem_type.type_name if hasattr(node.elem_type, "type_name") else str(node.elem_type)
         slice_type = f"stkt_slice_{elem_type_str}"
         if slice_type not in ("stkt_slice_i32", "stkt_slice_i64", "stkt_slice_f32", "stkt_slice_f64", "stkt_slice_str"):
             slice_type = "stkt_slice_i32"
         self.variable[node.ident] = slice_type
-        self.emit(f"{slice_type} {node.ident};")
-        self.emit(f"STKT_SLICE_INIT({node.ident});")
-        if node.elements:
-            elems = []
-            if hasattr(node.elements, "elements"):
-                elems = node.elements.elements
-            elif isinstance(node.elements, list):
-                elems = node.elements
-            for el in elems:
-                v = self.generate_expression(el)
-                self.emit(f"STKT_SLICE_APPEND({node.ident}, {v});")
+        if node.elements is not None and not isinstance(node.elements, Arrayliteral_Node) and not isinstance(node.elements, list):
+            expr_val = self.generate_expression(node.elements)
+            self.emit(f"{slice_type} {node.ident} = {expr_val};")
+        else:
+            self.emit(f"{slice_type} {node.ident};")
+            self.emit(f"STKT_SLICE_INIT({node.ident});")
+            if node.elements:
+                elems = []
+                if hasattr(node.elements, "elements"):
+                    elems = node.elements.elements
+                elif isinstance(node.elements, list):
+                    elems = node.elements
+                for el in elems:
+                    v = self.generate_expression(el)
+                    self.emit(f"STKT_SLICE_APPEND({node.ident}, {v});")
 
     def gen_Append_Node(self, node):
         arr = self.generate_expression(node.array)

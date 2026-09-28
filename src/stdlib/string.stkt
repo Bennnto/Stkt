@@ -75,3 +75,72 @@ export proc str_count: i32(s: str, target: char){
     }
     return count
 }
+
+export proc is_palindrome: bool(s :str){
+    let left: i32 =0
+    let right: i32 = len(s) - 1
+    if len(s) == 1 {
+            return true
+        }
+    while left < right {
+        if s[left] == s[right] {
+            left = left + 1
+            right = right - 1
+        } else {
+            return false
+        }
+    }
+    return true
+}
+
+export proc parse_int: i32(s: str){
+    let result: i32 = 0
+    let i: i32 = 0
+    let is_neg: bool = false
+    if len(s) > 0 && s[0] == '-'{
+            is_neg = true
+                i = 1
+        }
+    while i < len(s) {
+        if is_digit(s[i]){
+            let d: i32 = digit_to_int(s[i])
+            result = (result * 10) + d
+        } else {
+            __stkt_set_err()
+            return 0
+        }
+        i = i + 1
+
+    }
+    if is_neg == true {
+        return -result
+    } else {
+        return result
+    }
+
+}
+
+
+export proc int_to_str: str(n: i32){
+
+    let is_neg: bool = false
+    let val: i32 = n
+    if val == 0 {
+        return "0"
+    }
+    if val < 0 {
+        is_neg = true
+        val = 0 - val
+    }
+    let res: str = ""
+    while val > 0 {
+        let rem: i32 = val % 10
+        let ch: char = int_to_digit(rem)
+        res = "{ch}{res}"
+        val = val / 10
+    }
+    if is_neg {
+        return "-{res}"
+    }
+    return res
+}

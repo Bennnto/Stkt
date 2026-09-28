@@ -9,8 +9,9 @@ export proc stack_is_empty: bool(s: [i32]){
     return false
 }
 
-export proc stack_push: void(s: [i32], val: i32){
+export proc stack_push: [i32](s: [i32], val: i32){
     append(s, val)
+    return s
 }
 
 export proc stack_peek: i32(s: [i32]) {

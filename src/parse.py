@@ -46,6 +46,7 @@ from astnodes import (
     Append_Node,
     Pop_Node,
     Len_Node,
+    Isok_Node,
 
 )
 #-----------------------------------
@@ -545,6 +546,13 @@ def p_sync_stmt(p):
     else:
         p[0] = Sync_Node(m_path=p[2], alias=p[4])
 
+
+#-----------------------------------
+# ERROR HANDLING
+#-----------------------------------
+def p_expr_isok(p):
+    '''expression : expression DOT ISOK_Q LPAREN expression RPAREN'''
+    p[0] = Isok_Node(expr=p[1], msg=p[5])
 #-----------------------------------
 # OTHERs
 #-----------------------------------
@@ -562,6 +570,3 @@ def p_error(p):
 # PARSER
 #-----------------------------------
 parser = yacc.yacc()
-
-
-
