@@ -9,7 +9,7 @@
 ____
 
 ### General Information
-  Stkt is a statically typed, compiled systems programming language design for clarity, safety and high performance. It features a clean syntax, type inference, fixed-size arrays, procedures and more compile directly to standard c99 and native machine code using host c toolchains ('clang' or 'gcc').
+  Stkt is a statically typed, compiled programming language design for clarity, safety and high performance. It features a clean syntax, type inference, fixed-size arrays, procedures and more compile directly to standard c99 and native machine code using host c toolchains ('clang' or 'gcc').
 ____
   
 
