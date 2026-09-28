@@ -602,3 +602,38 @@ def test_sync_string_int_to_str(run_stkt):
     """
     output = run_stkt(code)
     assert "s1=425, s2=-108, s3=0, s4=7" in output
+
+def test_isok_success_and_failure(run_stkt):
+    # Success case
+    code_ok = """
+    sync "string" as s
+    let res: i32 = s.parse_int("123").isok?("Cannot Parse This Value")
+    onscreen "res={res}"
+    """
+    output = run_stkt(code_ok)
+    assert "res=123" in output
+
+    # Failure case exits with non-zero code and prints custom error
+    import sys, subprocess, os
+    from parse import parser
+    from lexicals import lexer
+    from semantics import SemanticAnalyze
+    from codegen import CodeGenerator
+
+    code_err = """
+    sync "string" as s
+    let res: i32 = s.parse_int("bad123").isok?("Cannot Parse This Value")
+    """
+    ast = parser.parse(code_err, lexer=lexer)
+    sem = SemanticAnalyze()
+    sem.analyse(ast)
+    cg = CodeGenerator()
+    c_code = cg.generate(ast)
+    with open("/tmp/t_test_err.c", "w") as f:
+        f.write(c_code)
+    subprocess.run(["gcc", "-o", "/tmp/t_test_err", "/tmp/t_test_err.c"])
+    run_res = subprocess.run(["/tmp/t_test_err"], capture_output=True, text=True)
+    assert run_res.returncode != 0
+    assert "Cannot Parse This Value" in run_res.stderr
+    for p in ["/tmp/t_test_err.c", "/tmp/t_test_err"]:
+        if os.path.exists(p): os.remove(p)
