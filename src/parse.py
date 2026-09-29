@@ -47,6 +47,7 @@ from astnodes import (
     Pop_Node,
     Len_Node,
     Isok_Node,
+    SliceAccess_Node,
     Or_Node,
 
 )
@@ -554,6 +555,10 @@ def p_sync_stmt(p):
 #-----------------------------------
 # ERROR HANDLING
 #-----------------------------------
+def p_expr_slice_access(p):
+    '''expression : expression LBRACKET expression DOTDOT expression RBRACKET'''
+    p[0] = SliceAccess_Node(target=p[1], start=p[3], end=p[5])
+
 def p_expr_isok(p):
     '''expression : expression DOT ISOK_Q LPAREN expression RPAREN'''
     p[0] = Isok_Node(expr=p[1], msg=p[5])

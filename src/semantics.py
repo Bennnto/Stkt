@@ -46,6 +46,7 @@ from astnodes import (
     Pop_Node,
     Len_Node,
     IsOk_Node,
+    SliceAccess_Node,
     Sync_Node,
     Export_Node,
     Or_Node,
@@ -132,13 +133,12 @@ class SemanticAnalyze:
             norm_actual = "i32" if actual_type == "int" else ("f32" if actual_type == "float" else actual_type)
             norm_expected = "i32" if expected_type == "int" else ("f32" if expected_type == "float" else expected_type)
             is_compat = (norm_actual == norm_expected) or \
-                        (expected_type == "str" and actual_type.startswith("str[")) or \
-                        (expected_type.startswith("str[") and actual_type == "str") or \
-                        (expected_type.startswith("str[") and actual_type.startswith("str["))
+                                    (expected_type.startswith("str[") and actual_type == "str") or \
+                                    (expected_type == "str" and actual_type.startswith("str[")) or \
+                                    (expected_type.startswith("str[") and actual_type.startswith("str["))
             if not is_compat:
-                raise SemanticError(
-                    f"Function '{node.ident}' argument {i} expected '{expected_type}', got '{actual_type}'"
-                )
+                raise SemanticError(f"Function '{node.ident}' argument {i} expected '{expected_type}', got '{actual_type}'"
+            )
 
     def analyse(self, node):
         if isinstance(node, Program_Node):
@@ -214,12 +214,7 @@ class SemanticAnalyze:
             if proc_symbol is not None:
                 raise SemanticError(f"Procedure '{node.ident}' already defined in this scope")
             ret_type_str = node.return_type.type_name if hasattr(node.return_type, 'type_name') else str(node.return_type)
-            param_types = []
-            for p in node.param:
-                if hasattr(p.type_name, "size") and p.type_name.size is not None and getattr(p.type_name, "type_name", "") == "str":
-                    param_types.append(f"str[{p.type_name.size}]")
-                else:
-                    param_types.append(p.type_name.type_name if hasattr(p.type_name, "type_name") else str(p.type_name))
+            param_types = [p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name) for p in node.param]
             proc_symbol = Symbol(ident=ident, type_name=ret_type_str, param_type=param_types, is_exported=node.is_exported)
             self.environment.define(proc_symbol)
 
@@ -232,6 +227,8 @@ class SemanticAnalyze:
             try:
                 for p in node.param:
                     p_name = p.ident
+                    if hasattr(p.type_name, "size") and p.type_name.size is not None:
+                        p_type_name = f"str[{p.type_name.size}"
                     p_type_name = p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name)
                     self.environment.define(Symbol(ident=p_name, type_name=p_type_name))
                 if isinstance(node.body, list):
@@ -764,6 +761,18 @@ class SemanticAnalyze:
             return norm_type
 
 
+
+        if isinstance(node, SliceAccess_Node):
+            tgt_t = self.infer_type(node.target)
+            if tgt_t != "str" and not tgt_t.startswith("str["):
+                raise SemanticError(f"Slice access [start..end] is only supported on strings, got '{tgt_t}'")
+            start_t = self.infer_type(node.start)
+            end_t = self.infer_type(node.end)
+            norm_s = "i32" if start_t == "int" else start_t
+            norm_e = "i32" if end_t == "int" else end_t
+            if norm_s not in INTEGER_TYPES or norm_e not in INTEGER_TYPES:
+                raise SemanticError(f"Slice range indices must be integers, got '{start_t}' and '{end_t}'")
+            return "str"
 
         if isinstance(node, Indexaccess_Node):
             arr_type = self.infer_type(node.array)

@@ -30,6 +30,7 @@ from astnodes import (
     Arrayliteral_Node,
     InterpolatedStr_Node,
     IsOk_Node,
+    SliceAccess_Node,
     Indexaccess_Node,
     Indexassign_Node,
     Case_Node,
@@ -174,6 +175,7 @@ class CodeGenerator:
             "    return v ? v : \"\";",
             "}",
             "static inline __attribute__((unused)) void stkt_exit(int32_t code) { exit(code); }",
+            'static inline __attribute__((unused)) char* stkt_str_concat(const char* s1, const char* s2) {\n    if (!s1) s1 = "";\n    if (!s2) s2 = "";\n    size_t len1 = strlen(s1);\n    size_t len2 = strlen(s2);\n    char* res = (char*)malloc(len1 + len2 + 1);\n    if (!res) return "";\n    memcpy(res, s1, len1);\n    memcpy(res + len1, s2, len2);\n    res[len1 + len2] = \'\\0\';\n    return res;\n}\nstatic inline __attribute__((unused)) char* stkt_str_slice(const char* s, int32_t start, int32_t end) {\n    if (!s) return "";\n    int32_t len = (int32_t)strlen(s);\n    if (start < 0) start = 0;\n    if (end > len) end = len;\n    if (start >= end) {\n        char* empty = (char*)malloc(1);\n        empty[0] = \'\\0\';\n        return empty;\n    }\n    int32_t sub_len = end - start;\n    char* res = (char*)malloc(sub_len + 1);\n    if (!res) return "";\n    memcpy(res, s + start, sub_len);\n    res[sub_len] = \'\\0\';\n    return res;\n}',
             "static bool __stkt_has_error = false;",
             "static inline void __stkt_set_err() { __stkt_has_error = true; }",
             "static inline void __stkt_clear_err() { __stkt_has_error = false; }",
@@ -238,6 +240,8 @@ class CodeGenerator:
             return "f32"
         elif isinstance(node, Bool_Node):
             return "bool"
+        elif isinstance(node, SliceAccess_Node):
+            return "str"
         elif isinstance(node, Char_Node):
             return "char"
         elif isinstance(node, (Str_Node, InterpolatedStr_Node)):
@@ -321,9 +325,13 @@ class CodeGenerator:
             right = self.generate_expression(node.right)
             lt = self.infer_expression_type(node.left)
             rt = self.infer_expression_type(node.right)
-            if (lt == "str" or rt == "str") and node.op in ("==", "!="):
+            is_lt_s = (lt == "str" or "str[" in lt)
+            is_rt_s = (rt == "str" or "str[" in rt)
+            if (is_lt_s or is_rt_s) and node.op in ("==", "!="):
                 cmp_op = "==" if node.op == "==" else "!="
                 return f"(strcmp({left}, {right}) {cmp_op} 0)"
+            if is_lt_s and is_rt_s and node.op == "+":
+                return f"stkt_str_concat({left}, {right})"
             return f"({left} {node.op} {right})"
 
         elif isinstance(node, Lambda_Node):
@@ -438,6 +446,12 @@ class CodeGenerator:
             elems = [self.generate_expression(e) for e in node.elements]
             return "{" + ", ".join(elems) + "}"
 
+        elif isinstance(node, SliceAccess_Node):
+            tgt = self.generate_expression(node.target)
+            st = self.generate_expression(node.start)
+            en = self.generate_expression(node.end)
+            return f"stkt_str_slice({tgt}, {st}, {en})"
+
         elif isinstance(node, Indexaccess_Node):
             arr = self.generate_expression(node.array)
             idx = self.generate_expression(node.index)
@@ -550,7 +564,10 @@ class CodeGenerator:
         for p in node.param:
             p_name = p.ident
             p_type = p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name)
-            if p_type.startswith("[") and p_type.endswith("]"):
+            if hasattr(p.type_name, "size") and p.type_name.size is not None and p_type == "str":
+                p_c_type = "char*"
+                self.variable[p_name] = f"str[{p.type_name.size}]"
+            elif p_type.startswith("[") and p_type.endswith("]"):
                 elem_t = p_type[1:-1]
                 p_c_type = f"stkt_slice_{elem_t}"
                 self.variable[p_name] = p_c_type

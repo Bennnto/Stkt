@@ -249,3 +249,9 @@ IsOk_Node = Isok_Node
 class Or_Node(Node):
     expr : Node
     fallback : Node
+
+@dataclass
+class SliceAccess_Node(Node):
+    target: Node
+    start: Node
+    end: Node

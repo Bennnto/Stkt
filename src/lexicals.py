@@ -18,7 +18,7 @@ tokens = (
     'LT', 'GT', 'LE', 'GE', 'NE', 'EQ',
     'AND', 'OR',
     'BIT_AND', 'BIT_OR', 'BIT_XOR', 'BIT_NOT', 'LSHFT', 'RSHFT',
-    'NOT', 'UMINUS', 'DOT',
+    'NOT', 'UMINUS', 'DOTDOT', 'DOT',
 
     #---------------------
     # KEYWORDS & OTHERS
@@ -65,6 +65,7 @@ t_ASSIGN = r'='
 t_ignore = ' \t'
 t_TERNARY = r'\?'
 t_ignore_COMMENT = r'//.*'
+t_DOTDOT = r'\.\.'
 t_DOT = r'\.'
 
 reserved_key = {

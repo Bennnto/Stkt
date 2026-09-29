@@ -721,3 +721,24 @@ def test_procedure_taking_and_mutating_fixed_str(run_stkt):
     """
     output = run_stkt(code)
     assert "Result: ApplY" in output
+
+def test_string_concatenation_and_slicing(run_stkt):
+    code = """
+    let hello: str = "Hello "
+    let world: str = "World!"
+    let greeting: str = hello + world
+
+    let full: str = "A" + "B" + "C" + "D"
+
+    let message: str = "Antigravity Stkt Compiler"
+    let w1: str = message[0..11]
+    let w2: str = message[12..16]
+    let w3: str = message[17..25]
+
+    let stack_s: str[10] = "abcdef"
+    let sub_s: str = stack_s[2..5]
+
+    onscreen "{greeting}, {full}, {w1}-{w2}-{w3}, sub={sub_s}"
+    """
+    output = run_stkt(code)
+    assert "Hello World!, ABCD, Antigravity-Stkt-Compiler, sub=cde" in output
