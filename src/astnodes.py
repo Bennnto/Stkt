@@ -36,6 +36,7 @@ class Ident_Node(Node):
 @dataclass
 class Type_Node(Node):
     type_name : str
+    size : Optional[int] = None
 
 @dataclass
 class Annassign_Node(Node):

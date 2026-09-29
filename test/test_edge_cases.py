@@ -681,3 +681,29 @@ def test_sync_set_data_structure(run_stkt):
     output = run_stkt(code)
     assert "a1=true, a2=true, a3=false, sz1=2" in output
     assert "r20=true, sz2=1, has20_after=false" in output
+
+def test_fixed_stack_string_execution(run_stkt):
+    code = """
+    let greeting: str[16] = "hello"
+    greeting[0] = 'H'
+    greeting[4] = 'O'
+    let c: char = greeting[1]
+    onscreen "{greeting}, char={c}"
+    """
+    output = run_stkt(code)
+    assert "HellO, char=e" in output
+
+def test_fixed_stack_string_capacity_overflow():
+    import pytest
+    from parse import parser
+    from lexicals import lexer
+    from semantics import SemanticAnalyze, SemanticError
+
+    code = """
+    let s: str[3] = "hello"
+    """
+    ast = parser.parse(code, lexer=lexer)
+    sem = SemanticAnalyze()
+    with pytest.raises(SemanticError) as exc_info:
+        sem.analyse(ast)
+    assert "exceeds fixed capacity" in str(exc_info.value)

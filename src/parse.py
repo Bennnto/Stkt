@@ -131,9 +131,12 @@ def p_type(p):
             | CHAR_TYPE
             | FLT_TYPE
             | VOID
-            | LBRACKET type RBRACKET'''
+            | LBRACKET type RBRACKET
+            | STR_TYPE LBRACKET INT RBRACKET'''
     if len(p) == 2:
         p[0] = Type_Node(type_name=p[1])
+    elif len(p) == 5 :
+        p[0] = Type_Node(type_name=p[1], size=p[3])
     else:
         inner = p[2].type_name if hasattr(p[2], "type_name") else str(p[2])
         p[0] = Type_Node(type_name=f"[{inner}]")

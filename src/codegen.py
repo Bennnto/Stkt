@@ -482,12 +482,18 @@ class CodeGenerator:
             c_type = C_TYPEMAP.get(expr_type, "int32_t")
             temp_val = f"__val_{self.lambda_count}"
             self.lambda_count += 1
-            return f"({{{c_type} {temp_val} = {expr_val}; if (__stkt_has_error) {{ __stkt_clear_err(); {temp_val} = {fallback}; }} {temp_val};}})"
+            return f"({{{c_type} {temp_val} = {expr_val}; if (__stkt_has_error) {{ __stkt_clear_err();{temp_val} = {fallback}; }} {temp_val}; }})"
 
     def gen_Annassign_Node(self, node: Annassign_Node):
         ident = node.ident
         if node.type_name is not None:
             type_name = node.type_name.type_name if hasattr(node.type_name, "type_name") else str(node.type_name)
+            if hasattr(node.type_name, "size") and node.type_name.size is not None and node.type_name.type_name == "str":
+                cap = node.type_name.size + 1
+                self.variable[ident] = f"str[{node.type_name.size}]"
+                value = self.generate_expression(node.value)
+                self.emit(f"char {ident}[{cap}] = {value};")
+                return
             c_type = C_TYPEMAP.get(type_name, "int32_t")
             self.variable[ident] = type_name
         else:

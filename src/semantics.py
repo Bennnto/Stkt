@@ -155,9 +155,15 @@ class SemanticAnalyze:
             actual_type = self.infer_type(node.value)
             if node.type_name is not None:
                 expected_type = node.type_name.type_name if hasattr(node.type_name, 'type_name') else str(node.type_name)
+                if hasattr(node.type_name, 'size') and node.type_name.size is not None and node.type_name.type_name == "str":
+                    max_cap = node.type_name.size
+                    if isinstance(node.value, Str_Node) and len(node.value.value) > max_cap :
+                        raise SemanticError(f"String literal '{node.value.value}' of length '{len(node.value.value)}' exceeds fixed capacity of '{max_cap}'")
+                    expected_type = f"str[{max_cap}]"
                 norm_expected = "i32" if expected_type == "int" else ("f32" if expected_type == "float" else expected_type)
                 norm_actual = "i32" if actual_type == "int" else ("f32" if actual_type == "float" else actual_type)
-                if norm_expected != norm_actual:
+                is_compat = (norm_expected == norm_actual) or (expected_type.startswith("str[") and actual_type == "str")
+                if not is_compat:
                     raise SemanticError(f"Variable '{node.ident}' declared '{expected_type}' got '{actual_type}'")
                 symbol = Symbol(ident=node.ident, type_name=expected_type)
             else:
@@ -424,11 +430,13 @@ class SemanticAnalyze:
 
             # 3. Verify it is an array container: e.g. "[i32]"
             arr_type = var_symbol.type_name
-            if not (arr_type.startswith("[") and arr_type.endswith("]")):
+            if arr_type == "str" or arr_type.startswith("str["):
+                expected_elem_type = "char"
+            elif arr_type.startswith("[") and arr_type.endswith("]"):
+                expected_elem_type = arr_type[1: -1]
+            else :
                 raise SemanticError(f"Cannot index non-array variable '{node.ident}' of type '{arr_type}'")
 
-            # 4. Extract expected element type: "[i32]" -> "i32"
-            expected_elem_type = arr_type[1:-1]
             norm_expected = "i32" if expected_elem_type == "int" else ("f32" if expected_elem_type == "float" else expected_elem_type)
 
             # 5. Validate index expression (must be an integer)
@@ -750,7 +758,7 @@ class SemanticAnalyze:
 
         if isinstance(node, Indexaccess_Node):
             arr_type = self.infer_type(node.array)
-            if arr_type == "str":
+            if arr_type == "str" or arr_type.startswith("str["):
                 idx_type = self.infer_type(node.index)
                 norm_idx = "i32" if idx_type == "int" else idx_type
                 if norm_idx not in INTEGER_TYPES:
