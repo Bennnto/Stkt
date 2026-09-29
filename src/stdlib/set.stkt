@@ -1,0 +1,39 @@
+export proc set_contains: bool(s: [i32], val: i32){
+    let i: i32 = 0
+    while i < len(s) {
+        if s[i] == val {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+export proc set_add: bool(s: [i32], val: i32){
+    if set_contains(s, val) == true {
+        return false
+    }
+    append(s, val)
+    return true
+}
+
+export proc set_size: i32(s: [i32]){
+    return len(s)
+}
+
+export proc set_remove: bool(s: [i32], val: i32){
+    let i: i32 = 0
+    while i < len(s) {
+        if s[i] == val {
+            let j: i32 = i
+            while j < len(s) - 1 {
+                s[j] = s[j + 1]
+                j = j + 1
+            }
+            pop(s)
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}

@@ -662,3 +662,22 @@ def test_or_type_mismatch_rejected():
     sem = SemanticAnalyze()
     with pytest.raises(SemanticError):
         sem.analyse(ast)
+
+def test_sync_set_data_structure(run_stkt):
+    code = """
+    sync "set" as set
+    let my_set: [i32] = []
+    let a1: bool = set.set_add(my_set, 10)
+    let a2: bool = set.set_add(my_set, 20)
+    let a3: bool = set.set_add(my_set, 10)
+    let sz1: i32 = set.set_size(my_set)
+    let has20: bool = set.set_contains(my_set, 20)
+    let r20: bool = set.set_remove(my_set, 20)
+    let sz2: i32 = set.set_size(my_set)
+    let has20_after: bool = set.set_contains(my_set, 20)
+    onscreen "a1={a1}, a2={a2}, a3={a3}, sz1={sz1}"
+    onscreen "r20={r20}, sz2={sz2}, has20_after={has20_after}"
+    """
+    output = run_stkt(code)
+    assert "a1=true, a2=true, a3=false, sz1=2" in output
+    assert "r20=true, sz2=1, has20_after=false" in output
