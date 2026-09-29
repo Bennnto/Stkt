@@ -107,7 +107,7 @@ onscreen("Hello World")
 ____
 
 
-#### MATCH and CASE 
+#### Match and Case 
 ```stkt
 // Match expression with case statements 
 match code {
