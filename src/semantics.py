@@ -131,7 +131,11 @@ class SemanticAnalyze:
             actual_type = self.infer_type(arg)
             norm_actual = "i32" if actual_type == "int" else ("f32" if actual_type == "float" else actual_type)
             norm_expected = "i32" if expected_type == "int" else ("f32" if expected_type == "float" else expected_type)
-            if norm_actual != norm_expected:
+            is_compat = (norm_actual == norm_expected) or \
+                        (expected_type == "str" and actual_type.startswith("str[")) or \
+                        (expected_type.startswith("str[") and actual_type == "str") or \
+                        (expected_type.startswith("str[") and actual_type.startswith("str["))
+            if not is_compat:
                 raise SemanticError(
                     f"Function '{node.ident}' argument {i} expected '{expected_type}', got '{actual_type}'"
                 )
@@ -210,7 +214,12 @@ class SemanticAnalyze:
             if proc_symbol is not None:
                 raise SemanticError(f"Procedure '{node.ident}' already defined in this scope")
             ret_type_str = node.return_type.type_name if hasattr(node.return_type, 'type_name') else str(node.return_type)
-            param_types = [p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name) for p in node.param]
+            param_types = []
+            for p in node.param:
+                if hasattr(p.type_name, "size") and p.type_name.size is not None and getattr(p.type_name, "type_name", "") == "str":
+                    param_types.append(f"str[{p.type_name.size}]")
+                else:
+                    param_types.append(p.type_name.type_name if hasattr(p.type_name, "type_name") else str(p.type_name))
             proc_symbol = Symbol(ident=ident, type_name=ret_type_str, param_type=param_types, is_exported=node.is_exported)
             self.environment.define(proc_symbol)
 

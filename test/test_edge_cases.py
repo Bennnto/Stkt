@@ -707,3 +707,17 @@ def test_fixed_stack_string_capacity_overflow():
     with pytest.raises(SemanticError) as exc_info:
         sem.analyse(ast)
     assert "exceeds fixed capacity" in str(exc_info.value)
+
+def test_procedure_taking_and_mutating_fixed_str(run_stkt):
+    code = """
+    proc set_char: void(buf: str[8], idx: i32, ch: char) {
+        buf[idx] = ch
+    }
+
+    let message: str[8] = "apple"
+    set_char(message, 0, 'A')
+    set_char(message, 4, 'Y')
+    onscreen "Result: {message}"
+    """
+    output = run_stkt(code)
+    assert "Result: ApplY" in output
