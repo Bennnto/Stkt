@@ -243,3 +243,8 @@ class Isok_Node(Node):
     msg : str
 
 IsOk_Node = Isok_Node
+
+@dataclass
+class Or_Node(Node):
+    expr : Node
+    fallback : Node

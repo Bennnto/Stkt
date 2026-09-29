@@ -47,6 +47,7 @@ from astnodes import (
     Pop_Node,
     Len_Node,
     Isok_Node,
+    Or_Node,
 
 )
 #-----------------------------------
@@ -553,6 +554,11 @@ def p_sync_stmt(p):
 def p_expr_isok(p):
     '''expression : expression DOT ISOK_Q LPAREN expression RPAREN'''
     p[0] = Isok_Node(expr=p[1], msg=p[5])
+
+def p_expr_or(p):
+    '''expression : expression DOT OR LPAREN expression RPAREN'''
+    p[0] = Or_Node(expr=p[1], fallback=p[5])
+
 #-----------------------------------
 # OTHERs
 #-----------------------------------

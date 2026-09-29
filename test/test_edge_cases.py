@@ -637,3 +637,28 @@ def test_isok_success_and_failure(run_stkt):
     assert "Cannot Parse This Value" in run_res.stderr
     for p in ["/tmp/t_test_err.c", "/tmp/t_test_err"]:
         if os.path.exists(p): os.remove(p)
+
+def test_or_fallback_evaluation(run_stkt):
+    code = """
+    sync "string" as s
+    let ok_val: i32 = s.parse_int("3000").or(8080)
+    let fallback_val: i32 = s.parse_int("bad_input").or(8080)
+    onscreen "ok={ok_val}, fallback={fallback_val}"
+    """
+    output = run_stkt(code)
+    assert "ok=3000, fallback=8080" in output
+
+def test_or_type_mismatch_rejected():
+    from parse import parser
+    from lexicals import lexer
+    from semantics import SemanticAnalyze, SemanticError
+    import pytest
+
+    code = """
+    sync "string" as s
+    let port: i32 = s.parse_int("invalid").or("string_mismatch")
+    """
+    ast = parser.parse(code, lexer=lexer)
+    sem = SemanticAnalyze()
+    with pytest.raises(SemanticError):
+        sem.analyse(ast)

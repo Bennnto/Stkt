@@ -45,7 +45,8 @@ from astnodes import (
     Export_Node,
     Sync_Node,
     Len_Node,
-    Isok_Node
+    Isok_Node,
+    Or_Node,
 )
 
 C_TYPEMAP = {
@@ -452,6 +453,10 @@ class CodeGenerator:
                     wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
                     desugared_isok = IsOk_Node(expr=wrapped_call, msg=node.target.msg)
                     return self.generate_expression(desugared_isok)
+                if isinstance(node.target, Or_Node):
+                    wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
+                    desugared_or = Or_Node(expr=wrapped_call, fallback=node.target.fallback)
+                    return self.generate_expression(desugared_or)
                 if isinstance(node.target, Call_Node):
                     args = [self.generate_expression(a) for a in node.target.args]
                     arg_str = ", ".join(args)
@@ -469,6 +474,15 @@ class CodeGenerator:
             temp_val = f"__val_{self.lambda_count}"
             self.lambda_count += 1
             return f"({{{c_ret_type} {temp_val} = {expr_val}; if (__stkt_has_error) {{ fprintf(stderr, \"[Error]: %s\\n\", {msg_val}); exit(1); }} {temp_val};}})"
+
+        elif isinstance(node, Or_Node):
+            expr_val = self.generate_expression(node.expr)
+            fallback = self.generate_expression(node.fallback)
+            expr_type = self.infer_expression_type(node.expr)
+            c_type = C_TYPEMAP.get(expr_type, "int32_t")
+            temp_val = f"__val_{self.lambda_count}"
+            self.lambda_count += 1
+            return f"({{{c_type} {temp_val} = {expr_val}; if (__stkt_has_error) {{ __stkt_clear_err(); {temp_val} = {fallback}; }} {temp_val};}})"
 
     def gen_Annassign_Node(self, node: Annassign_Node):
         ident = node.ident

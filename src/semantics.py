@@ -47,7 +47,8 @@ from astnodes import (
     Len_Node,
     IsOk_Node,
     Sync_Node,
-    Export_Node
+    Export_Node,
+    Or_Node,
 )
 
 INTEGER_TYPES = {
@@ -799,6 +800,10 @@ class SemanticAnalyze:
                     wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
                     desugared_isok = IsOk_Node(expr=wrapped_call, msg=node.target.msg)
                     return self.infer_type(desugared_isok)
+                if isinstance(node.target, Or_Node):
+                    wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
+                    desugared_or = Or_Node(expr=wrapped_call, fallback=node.target.fallback)
+                    return self.infer_type(desugared_or)
                 if isinstance(node.target, Call_Node):
                     fn_name = node.target.ident
                     if fn_name not in ns:
@@ -826,10 +831,23 @@ class SemanticAnalyze:
             return struct_sym.fields[field_name]
 
         if isinstance(node, IsOk_Node):
+            self.analyse(node.expr)
             expr_type = self.infer_type(node.expr)
             expr_norm = "i32" if expr_type == "int" else ("f32" if expr_type == "float" else str(expr_type))
+            self.analyse(node.msg)
             msg_type = self.infer_type(node.msg)
             msg_norm = "i32" if msg_type == "int" else ("f32" if msg_type == "float" else str(msg_type))
             if msg_norm != "str" :
-                raise SemanticErrror(f"Message type expected 'str' type got '{msg_norm}' type")
+                raise SemanticError(f"Message type expected 'str' type got '{msg_norm}' type")
+            return expr_norm
+
+        if isinstance(node, Or_Node):
+            self.analyse(node.expr)
+            expr_type = self.infer_type(node.expr)
+            expr_norm = "i32" if expr_type == "int" else ("f32" if expr_type == "float" else str(expr_type))
+            self.analyse(node.fallback)
+            fallback_type = self.infer_type(node.fallback)
+            fallback_norm = "i32" if fallback_type == "int" else ("f32" if fallback_type == "float" else str(fallback_type))
+            if expr_norm != fallback_norm :
+                raise SemanticError(f"Fallback for Or expected type '{expr_norm}' got '{fallback_norm}' ")
             return expr_norm
