@@ -31,6 +31,8 @@ from astnodes import (
     InterpolatedStr_Node,
     IsOk_Node,
     SliceAccess_Node,
+    Maptype_Node,
+    Mapliteral_Node,
     Indexaccess_Node,
     Indexassign_Node,
     Case_Node,
@@ -179,6 +181,7 @@ class CodeGenerator:
             "static bool __stkt_has_error = false;",
             "static inline void __stkt_set_err() { __stkt_has_error = true; }",
             "static inline void __stkt_clear_err() { __stkt_has_error = false; }",
+            '/* Stkt Hash Map Runtime */\ntypedef struct __stkt_map_entry_str_i32 {\n    char* key;\n    int32_t val;\n    struct __stkt_map_entry_str_i32* next;\n} __stkt_map_entry_str_i32;\n\ntypedef struct {\n    __stkt_map_entry_str_i32* buckets[64];\n    int32_t size;\n} __stkt_map_str_i32;\n\nstatic inline __attribute__((unused)) uint32_t __stkt_hash_str(const char* s) {\n    uint32_t h = 2166136261u;\n    if (!s) return 0;\n    while (*s) {\n        h ^= (uint8_t)*s++;\n        h *= 16777619u;\n    }\n    return h;\n}\n\nstatic inline __attribute__((unused)) __stkt_map_str_i32* __stkt_map_create_str_i32() {\n    __stkt_map_str_i32* m = (__stkt_map_str_i32*)calloc(1, sizeof(__stkt_map_str_i32));\n    return m;\n}\n\nstatic inline __attribute__((unused)) void __stkt_map_set_str_i32(__stkt_map_str_i32* m, const char* key, int32_t val) {\n    if (!m || !key) return;\n    uint32_t idx = __stkt_hash_str(key) % 64;\n    __stkt_map_entry_str_i32* curr = m->buckets[idx];\n    while (curr) {\n        if (strcmp(curr->key, key) == 0) {\n            curr->val = val;\n            return;\n        }\n        curr = curr->next;\n    }\n    __stkt_map_entry_str_i32* entry = (__stkt_map_entry_str_i32*)malloc(sizeof(__stkt_map_entry_str_i32));\n    entry->key = strdup(key);\n    entry->val = val;\n    entry->next = m->buckets[idx];\n    m->buckets[idx] = entry;\n    m->size++;\n}\n\nstatic inline __attribute__((unused)) int32_t __stkt_map_get_str_i32(__stkt_map_str_i32* m, const char* key) {\n    if (!m || !key) { __stkt_set_err(); return 0; }\n    uint32_t idx = __stkt_hash_str(key) % 64;\n    __stkt_map_entry_str_i32* curr = m->buckets[idx];\n    while (curr) {\n        if (strcmp(curr->key, key) == 0) {\n            return curr->val;\n        }\n        curr = curr->next;\n    }\n    __stkt_set_err();\n    return 0;\n}\n\nstatic inline __attribute__((unused)) bool __stkt_map_has_str_i32(__stkt_map_str_i32* m, const char* key) {\n    if (!m || !key) return false;\n    uint32_t idx = __stkt_hash_str(key) % 64;\n    __stkt_map_entry_str_i32* curr = m->buckets[idx];\n    while (curr) {\n        if (strcmp(curr->key, key) == 0) {\n            return true;\n        }\n        curr = curr->next;\n    }\n    return false;\n}',
 
         ]
         if isinstance(ast, Program_Node):
@@ -244,6 +247,12 @@ class CodeGenerator:
             return "str"
         elif isinstance(node, Char_Node):
             return "char"
+        elif isinstance(node, Mapliteral_Node):
+            return "hmap"
+        elif isinstance(node, Mapliteral_Node):
+            return "__stkt_map_create_str_i32()"
+        elif isinstance(node, Mapliteral_Node):
+            return "__stkt_map_create_str_i32()"
         elif isinstance(node, (Str_Node, InterpolatedStr_Node)):
             return "str"
         elif isinstance(node, Ident_Node):
@@ -259,7 +268,10 @@ class CodeGenerator:
         return "i32"
 
     def generate_expression(self, node):
-        if isinstance(node, Int_Node):
+        if isinstance(node, Mapliteral_Node):
+            return "__stkt_map_create_str_i32()"
+
+        elif isinstance(node, Int_Node):
             return str(node.value)
 
         elif isinstance(node, Float_Node):
@@ -462,6 +474,30 @@ class CodeGenerator:
             return f"{arr}[{idx}]"
 
         elif isinstance(node, Typeaccess_Node):
+            if isinstance(node.target, IsOk_Node):
+                wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
+                desugared_isok = IsOk_Node(expr=wrapped_call, msg=node.target.msg)
+                return self.generate_expression(desugared_isok)
+            if isinstance(node.target, Or_Node):
+                wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
+                desugared_or = Or_Node(expr=wrapped_call, fallback=node.target.fallback)
+                return self.generate_expression(desugared_or)
+            obj_t = self.variable.get(node.ident, "")
+            if obj_t.startswith("hmap["):
+                inner = obj_t[5:-1]
+                parts = inner.split(":")
+                k_t = parts[0].strip()
+                v_t = parts[1].strip()
+                if isinstance(node.target, Call_Node):
+                    m_name = node.target.ident
+                    args = [self.generate_expression(a) for a in node.target.args]
+                    args_s = ", ".join(args)
+                    if m_name == "set":
+                        return f"__stkt_map_set_{k_t}_{v_t}({node.ident}, {args_s})"
+                    elif m_name == "get":
+                        return f"__stkt_map_get_{k_t}_{v_t}({node.ident}, {args_s})"
+                    elif m_name in ("has", "has?"):
+                        return f"__stkt_map_has_{k_t}_{v_t}({node.ident}, {args_s})"
             if node.ident in self.namespaces:
                 if isinstance(node.target, IsOk_Node):
                     wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
@@ -501,6 +537,15 @@ class CodeGenerator:
     def gen_Annassign_Node(self, node: Annassign_Node):
         ident = node.ident
         if node.type_name is not None:
+            if isinstance(node.type_name, Maptype_Node):
+                k = node.type_name.key_type.type_name if hasattr(node.type_name.key_type, "type_name") else str(node.type_name.key_type)
+                v = node.type_name.val_type.type_name if hasattr(node.type_name.val_type, "type_name") else str(node.type_name.val_type)
+                type_name = f"hmap[{k}:{v}]"
+                c_type = f"__stkt_map_{k}_{v}*"
+                self.variable[ident] = type_name
+                value = self.generate_expression(node.value)
+                self.emit(f"{c_type} {ident} = {value};")
+                return
             type_name = node.type_name.type_name if hasattr(node.type_name, "type_name") else str(node.type_name)
             if hasattr(node.type_name, "size") and node.type_name.size is not None and node.type_name.type_name == "str":
                 cap = node.type_name.size + 1

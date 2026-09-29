@@ -1,6 +1,6 @@
 from ast import expr
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 class Node:
     pass
@@ -255,3 +255,17 @@ class SliceAccess_Node(Node):
     target: Node
     start: Node
     end: Node
+
+@dataclass
+class Maptype_Node(Node):
+    key_type : Node
+    val_type : Node
+
+@dataclass
+class Mapliteral_Node(Node):
+    items: Optional[List[Any]] = None
+
+@dataclass
+class Mapitem_Node(Node):
+    key : Node
+    value : Node

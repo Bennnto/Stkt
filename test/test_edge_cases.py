@@ -742,3 +742,93 @@ def test_string_concatenation_and_slicing(run_stkt):
     """
     output = run_stkt(code)
     assert "Hello World!, ABCD, Antigravity-Stkt-Compiler, sub=cde" in output
+
+def test_native_hmap_execution_and_methods(run_stkt):
+    code = """
+    let scores: hmap[str: i32] = {}
+    scores.set("alice", 100)
+    scores.set("bob", 95)
+
+    let s_alice: i32 = scores.get("alice")
+    let s_bob: i32 = scores.get("bob")
+    let has_alice: bool = scores.has("alice")
+    let has_charlie: bool = scores.has("charlie")
+
+    onscreen "alice={s_alice}, bob={s_bob}, has_a={has_alice}, has_c={has_charlie}"
+    """
+    output = run_stkt(code)
+    assert "alice=100, bob=95, has_a=true, has_c=false" in output
+
+def test_native_hmap_or_fallback(run_stkt):
+    code = """
+    let scores: hmap[str: i32] = {}
+    scores.set("math", 98)
+
+    let val1: i32 = scores.get("math").or(0)
+    let val2: i32 = scores.get("history").or(50)
+
+    onscreen "math={val1}, history={val2}"
+    """
+    output = run_stkt(code)
+    assert "math=98, history=50" in output
+
+def test_native_hmap_type_mismatch_rejected():
+    import pytest
+    from parse import parser
+    from lexicals import lexer
+    from semantics import SemanticAnalyze, SemanticError
+
+    code = """
+    let scores: hmap[str: i32] = {}
+    scores.set(123, 100)
+    """
+    ast = parser.parse(code, lexer=lexer)
+    sem = SemanticAnalyze()
+    with pytest.raises(SemanticError) as exc_info:
+        sem.analyse(ast)
+    assert "Key argument type expected 'str'" in str(exc_info.value)
+
+def test_native_hmap_execution_and_methods(run_stkt):
+    code = """
+    let scores: hmap[str: i32] = {}
+    scores.set("alice", 100)
+    scores.set("bob", 95)
+
+    let s_alice: i32 = scores.get("alice")
+    let s_bob: i32 = scores.get("bob")
+    let has_alice: bool = scores.has("alice")
+    let has_charlie: bool = scores.has("charlie")
+
+    onscreen "alice={s_alice}, bob={s_bob}, has_a={has_alice}, has_c={has_charlie}"
+    """
+    output = run_stkt(code)
+    assert "alice=100, bob=95, has_a=true, has_c=false" in output
+
+def test_native_hmap_or_fallback(run_stkt):
+    code = """
+    let scores: hmap[str: i32] = {}
+    scores.set("math", 98)
+
+    let val1: i32 = scores.get("math").or(0)
+    let val2: i32 = scores.get("history").or(50)
+
+    onscreen "math={val1}, history={val2}"
+    """
+    output = run_stkt(code)
+    assert "math=98, history=50" in output
+
+def test_native_hmap_type_mismatch_rejected():
+    import pytest
+    from parse import parser
+    from lexicals import lexer
+    from semantics import SemanticAnalyze, SemanticError
+
+    code = """
+    let scores: hmap[str: i32] = {}
+    scores.set(123, 100)
+    """
+    ast = parser.parse(code, lexer=lexer)
+    sem = SemanticAnalyze()
+    with pytest.raises(SemanticError) as exc_info:
+        sem.analyse(ast)
+    assert "Key argument type expected 'str'" in str(exc_info.value)

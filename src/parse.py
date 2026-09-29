@@ -49,6 +49,9 @@ from astnodes import (
     Isok_Node,
     SliceAccess_Node,
     Or_Node,
+    Maptype_Node,
+    Mapliteral_Node,
+    Mapitem_Node,
 
 )
 #-----------------------------------
@@ -133,11 +136,14 @@ def p_type(p):
             | FLT_TYPE
             | VOID
             | LBRACKET type RBRACKET
-            | STR_TYPE LBRACKET INT RBRACKET'''
+            | STR_TYPE LBRACKET INT RBRACKET
+            | HMAP LBRACKET type COLON type RBRACKET'''
     if len(p) == 2:
         p[0] = Type_Node(type_name=p[1])
     elif len(p) == 5 :
         p[0] = Type_Node(type_name=p[1], size=p[3])
+    elif len(p) == 7 :
+        p[0] = Maptype_Node(key_type=p[3], val_type=p[5])
     else:
         inner = p[2].type_name if hasattr(p[2], "type_name") else str(p[2])
         p[0] = Type_Node(type_name=f"[{inner}]")
@@ -566,6 +572,29 @@ def p_expr_isok(p):
 def p_expr_or(p):
     '''expression : expression DOT OR LPAREN expression RPAREN'''
     p[0] = Or_Node(expr=p[1], fallback=p[5])
+
+#-----------------------------------
+# HMAP
+#-----------------------------------
+
+def p_expr_map_literal(p):
+    '''expression : LBRACE map_item_list RBRACE'''
+    p[0] = Mapliteral_Node(items=p[2])
+
+def p_map_item(p):
+    '''map_item : expression COLON expression'''
+    p[0] = Mapitem_Node(key=p[1], value=p[3])
+
+def p_map_item_list(p):
+    '''map_item_list : map_item
+                     | map_item_list COMMA map_item
+                     | empty'''
+    if len(p) == 2 and p[1] is not None :
+        p[0] = [p[1]]
+    elif len(p) == 4 :
+        p[0] = p[1] + [p[3]]
+    else :
+        p[0] = []
 
 #-----------------------------------
 # OTHERs

@@ -50,6 +50,9 @@ from astnodes import (
     Sync_Node,
     Export_Node,
     Or_Node,
+    Maptype_Node,
+    Mapliteral_Node,
+    Mapitem_Node,
 )
 
 INTEGER_TYPES = {
@@ -149,7 +152,7 @@ class SemanticAnalyze:
             for part in node.parts:
                 self.analyse(part)
 
-        elif isinstance(node, (Int_Node, Str_Node, Float_Node, Char_Node, Bool_Node, Ident_Node)):
+        elif isinstance(node, (Int_Node, Str_Node, Float_Node, Char_Node, Bool_Node, Ident_Node, Typeaccess_Node, Call_Node)):
             self.infer_type(node)
 
         elif isinstance(node, Annassign_Node):
@@ -158,7 +161,12 @@ class SemanticAnalyze:
             self.analyse(node.value)
             actual_type = self.infer_type(node.value)
             if node.type_name is not None:
-                expected_type = node.type_name.type_name if hasattr(node.type_name, 'type_name') else str(node.type_name)
+                if isinstance(node.type_name, Maptype_Node):
+                    k = node.type_name.key_type.type_name if hasattr(node.type_name.key_type, 'type_name') else str(node.type_name.key_type)
+                    v = node.type_name.val_type.type_name if hasattr(node.type_name.val_type, 'type_name') else str(node.type_name.val_type)
+                    expected_type = f"hmap[{k}:{v}]"
+                else :
+                    expected_type = node.type_name.type_name if hasattr(node.type_name, 'type_name') else str(node.type_name)
                 if hasattr(node.type_name, 'size') and node.type_name.size is not None and node.type_name.type_name == "str":
                     max_cap = node.type_name.size
                     if isinstance(node.value, Str_Node) and len(node.value.value) > max_cap :
@@ -166,7 +174,7 @@ class SemanticAnalyze:
                     expected_type = f"str[{max_cap}]"
                 norm_expected = "i32" if expected_type == "int" else ("f32" if expected_type == "float" else expected_type)
                 norm_actual = "i32" if actual_type == "int" else ("f32" if actual_type == "float" else actual_type)
-                is_compat = (norm_expected == norm_actual) or (expected_type.startswith("str[") and actual_type == "str")
+                is_compat = (norm_expected == norm_actual) or (expected_type.startswith("str[") and actual_type == "str") or (expected_type.startswith("hmap[") and actual_type =="hmap")
                 if not is_compat:
                     raise SemanticError(f"Variable '{node.ident}' declared '{expected_type}' got '{actual_type}'")
                 symbol = Symbol(ident=node.ident, type_name=expected_type)
@@ -614,6 +622,9 @@ class SemanticAnalyze:
         if isinstance(node, (Str_Node, InterpolatedStr_Node)):
             return "str"
 
+        if isinstance(node, Mapliteral_Node):
+            return "hmap"
+
         if isinstance(node, Ident_Node):
             symbol = self.environment.resolve(node.ident)
             if symbol is None:
@@ -820,6 +831,14 @@ class SemanticAnalyze:
             return norm_field_type
 
         if isinstance(node, Typeaccess_Node):
+            if isinstance(node.target, IsOk_Node):
+                wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
+                desugared_isok = IsOk_Node(expr=wrapped_call, msg=node.target.msg)
+                return self.infer_type(desugared_isok)
+            if isinstance(node.target, Or_Node):
+                wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
+                desugared_or = Or_Node(expr=wrapped_call, fallback=node.target.fallback)
+                return self.infer_type(desugared_or)
             if node.ident in self.namespaces:
                 ns = self.namespaces[node.ident]
                 if isinstance(node.target, IsOk_Node):
@@ -841,6 +860,53 @@ class SemanticAnalyze:
             # Resolve object type
             obj_name = node.ident
             obj_sym = self.environment.resolve(obj_name)
+            if obj_sym is None :
+                raise SemanticError(f"Variable '{obj_name}' is not defined")
+            if obj_sym.type_name.startswith("hmap["):
+                inner = obj_sym.type_name[5: -1]
+                parts = inner.split(":")
+                expected_key = parts[0].strip()
+                expected_val = parts[1].strip()
+                method_name = node.target.ident
+                args = node.target.args
+                if method_name == "get":
+                    args_size = len(args)
+                    if args_size != 1 :
+                        raise SemanticError(f"Get method required 1 argument got '{args_size}' arguments")
+                    args_type = self.infer_type(args[0])
+                    args_norm = "i32" if args_type == "int" else ("f32" if args_type == "float" else str(args_type))
+                    key_norm = "i32" if expected_key == "int" else ("f32" if expected_key == "float" else str(expected_key))
+                    if args_norm != key_norm :
+                        raise SemanticError(f"Arguments type mismatch key type expected '{key_norm}' type got '{args_norm}' type")
+                    val_norm = "i32" if expected_val == "int" else ("f32" if expected_val == "float" else str(expected_val))
+                    return val_norm
+                if method_name == "set":
+                    args_size = len(args)
+                    if args_size != 2:
+                        raise SemanticError(f"Set method requred 2 arguments key | value got {args_size} arguments")
+                    key_args_type = self.infer_type(args[0])
+                    val_args_type = self.infer_type(args[1])
+                    key_args_norm = "i32" if key_args_type == "int" else ("f32" if key_args_type == "float" else str(key_args_type))
+                    val_args_norm = "i32" if val_args_type == "int" else ("f32" if val_args_type == "float" else str(val_args_type))
+                    key_norm = "i32" if expected_key == "int" else ("f32" if expected_key == "float" else str(expected_key))
+                    val_norm = "i32" if expected_val == "int" else ("f32" if expected_val == "float" else str(expected_val))
+                    if key_args_norm != key_norm :
+                        raise SemanticError(f"Key argument type expected '{key_norm}' type got '{key_args_norm}' type")
+                    if val_args_norm != val_norm :
+                        raise SemanticError(f"Value argument type expected '{val_norm}' type got '{val_args_norm}' type")
+                    return "void"
+                if method_name in ("has?", "has"):
+                    args_size = len(args)
+                    if args_size != 1:
+                        raise SemanticError(f"has? method required 1 argument got '{args_size}' arguments")
+                    key_args_type = self.infer_type(args[0])
+                    key_args_norm = "i32" if key_args_type == "int" else ("f32" if key_args_type == "float" else str(key_args_type))
+                    key_norm = "i32" if expected_key == "int" else ("f32" if expected_key == "float" else str(expected_key))
+                    if key_args_norm != key_norm :
+                        raise SemanticError(f"Key argument type expected '{key_norm}' type got '{key_args_norm}' type")
+                    return "bool"
+                else :
+                    raise SemanticError(f"hmap has no method '{method_name}'")
             if obj_sym is None:
                 raise SemanticError(f"Variable '{obj_name}' is not defined")
 
