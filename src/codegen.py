@@ -1,3 +1,4 @@
+from runtime import RUNTIME_CORE, RUNTIME_SLICES, RUNTIME_STRINGS, RUNTIME_ERROR, RUNTIME_HMAP, RUNTIME_IO, RUNTIME_OS
 from pathlib import Path
 from semantics import resolve_module_path
 from astnodes import (
@@ -106,96 +107,99 @@ class CodeGenerator:
         else:
             self.lines.append("")
 
+
+    def detect_features(self, node):
+        if node is None:
+            return
+        if isinstance(node, list):
+            for item in node:
+                self.detect_features(item)
+            return
+
+        if isinstance(node, (SliceAccess_Node,)):
+            self.needs_strings = True
+        if isinstance(node, (SliceDecl_Node, Arraydecl_Node, Arrayliteral_Node, Append_Node)):
+            self.needs_slices = True
+
+        if isinstance(node, (Maptype_Node, Mapliteral_Node)):
+            self.needs_hmap = True
+            self.needs_slices = True
+            self.needs_error = True
+
+        if isinstance(node, (IsOk_Node, Or_Node)):
+            self.needs_error = True
+
+        if isinstance(node, Sync_Node):
+            raw = node.m_path.value if hasattr(node.m_path, "value") else str(node.m_path)
+            mod = raw.strip('"\'')
+            if mod == "io":
+                self.needs_io = True
+            elif mod == "os":
+                self.needs_os = True
+                self.needs_slices = True
+            elif mod == "string":
+                self.needs_strings = True
+                self.needs_error = True
+            else:
+                self.needs_slices = True
+                self.needs_strings = True
+                self.needs_error = True
+
+        if isinstance(node, Annassign_Node):
+            t_str = str(getattr(node.type_name, "type_name", node.type_name))
+            if "[" in t_str:
+                if t_str.startswith("hmap["):
+                    self.needs_hmap = True
+                    self.needs_slices = True
+                    self.needs_error = True
+                elif not t_str.startswith("str["):
+                    self.needs_slices = True
+
+        if isinstance(node, Procedure_Node):
+            rt_str = str(getattr(node.return_type, "type_name", node.return_type))
+            if "[" in rt_str and not rt_str.startswith("str["):
+                self.needs_slices = True
+            for p in node.param:
+                pt_str = str(getattr(p.type_name, "type_name", p.type_name))
+                if "[" in pt_str and not pt_str.startswith("str["):
+                    self.needs_slices = True
+
+        if isinstance(node, Typeaccess_Node):
+            if isinstance(node.target, Call_Node):
+                m = node.target.ident
+                if m in ("split", "trim", "contains"):
+                    self.needs_strings = True
+                    if m == "split":
+                        self.needs_slices = True
+                elif m in ("set", "get", "has", "keys"):
+                    self.needs_hmap = True
+                    self.needs_slices = True
+                    self.needs_error = True
+                elif m in ("pop", "append", "len"):
+                    self.needs_slices = True
+
+        if isinstance(node, Binaryops_Node):
+            if node.op == "+" and (isinstance(node.left, (Str_Node, InterpolatedStr_Node)) or isinstance(node.right, (Str_Node, InterpolatedStr_Node))):
+                self.needs_strings = True
+
+        for key, val in getattr(node, "__dict__", {}).items():
+            if isinstance(val, list):
+                for item in val:
+                    if hasattr(item, "__dict__") or isinstance(item, list):
+                        self.detect_features(item)
+            elif hasattr(val, "__dict__"):
+                self.detect_features(val)
+
     def generate(self, ast, main_name: str = "main") -> str:
-        headers = [
-            "#include <stdio.h>",
-            "#include <stdlib.h>",
-            "#include <stdint.h>",
-            "#include <string.h>",
-            "#include <math.h>",
-            "#include <stdbool.h>",
-            "#include <time.h>",
-            "#include <setjmp.h>",
-            "#include <ctype.h>",
-            "/* Stkt Dynamic Array / Slice Runtime */",
-            "#define STKT_SLICE_DEFINE(TYPE, NAME) \\",
-            "typedef struct { TYPE* data; size_t len; size_t cap; } __stkt_slice_buf_##NAME; \\",
-            "typedef struct { __stkt_slice_buf_##NAME* buf; } NAME;",
-            "STKT_SLICE_DEFINE(int32_t, stkt_slice_i32)",
-            "STKT_SLICE_DEFINE(int64_t, stkt_slice_i64)",
-            "STKT_SLICE_DEFINE(float, stkt_slice_f32)",
-            "STKT_SLICE_DEFINE(double, stkt_slice_f64)",
-            "STKT_SLICE_DEFINE(char*, stkt_slice_str)",
-            "#define STKT_SLICE_INIT(s) do { \\",
-            "    (s).buf = malloc(sizeof(*((s).buf))); \\",
-            "    (s).buf->data = NULL; \\",
-            "    (s).buf->len = 0; \\",
-            "    (s).buf->cap = 0; \\",
-            "} while(0)",
-            "#define STKT_SLICE_APPEND(s, val) do { \\",
-            "    if ((s).buf->len >= (s).buf->cap) { \\",
-            "        (s).buf->cap = ((s).buf->cap == 0) ? 4 : ((s).buf->cap * 2); \\",
-            "        (s).buf->data = realloc((s).buf->data, (s).buf->cap * sizeof(*((s).buf->data))); \\",
-            "    } \\",
-            "    (s).buf->data[(s).buf->len++] = (val); \\",
-            "} while(0)",
-            "#define STKT_SLICE_POP(s) ((s).buf->data[--((s).buf->len)])",
-            "#define STKT_SLICE_LEN(s) ((int32_t)((s).buf->len))",
-            "",
-            "",
-            "/* Stkt Standard Runtime Scanners */",
-            "static inline __attribute__((unused)) int32_t stkt_scan_i32() { int32_t v = 0; if (scanf(\"%d\", &v) != 1) return 0; return v; }",
-            "static inline __attribute__((unused)) uint32_t stkt_scan_u32() { uint32_t v = 0; if (scanf(\"%u\", &v) != 1) return 0; return v; }",
-            "static inline __attribute__((unused)) int64_t stkt_scan_i64() { long long v = 0; if (scanf(\"%lld\", &v) != 1) return 0; return (int64_t)v; }",
-            "static inline __attribute__((unused)) uint64_t stkt_scan_u64() { unsigned long long v = 0; if (scanf(\"%llu\", &v) != 1) return 0; return (uint64_t)v; }",
-            "static inline __attribute__((unused)) float stkt_scan_f32() { float v = 0.0f; if (scanf(\"%f\", &v) != 1) return 0.0f; return v; }",
-            "static inline __attribute__((unused)) double stkt_scan_f64() { double v = 0.0; if (scanf(\"%lf\", &v) != 1) return 0.0; return v; }",
-            "static inline __attribute__((unused)) char stkt_scan_char() { char c = 0; if (scanf(\" %c\", &c) != 1) return 0; return c; }",
-            "static inline __attribute__((unused)) char* stkt_scan_str() { char* b = (char*)malloc(1024); if (!b) return \"\"; if (!fgets(b, 1024, stdin)) { b[0] = 0; return b; } size_t l = strlen(b); if (l > 0 && b[l-1] == \x27\\n\x27) b[l-1] = 0; if (l > 1 && b[l-2] == \x27\\r\x27) b[l-2] = 0; return b; }",
-            "static inline __attribute__((unused)) bool stkt_scan_bool() { char b[16]; if (scanf(\"%15s\", b) != 1) return false; return (strcmp(b, \"true\") == 0 || strcmp(b, \"1\") == 0); }",
-            "",
-            "/* Stkt Standard File IO Runtime */",
-            "static inline __attribute__((unused)) bool stkt_file_exists(const char* path) { if (!path) return false; FILE* f = fopen(path, \"r\"); if (f) { fclose(f); return true; } return false; }",
-            "static inline __attribute__((unused)) bool stkt_file_write(const char* path, const char* text) { if (!path) return false; FILE* f = fopen(path, \"w\"); if (!f) return false; if (text) { fputs(text, f); } fclose(f); return true; }",
-            "static inline __attribute__((unused)) char* stkt_file_read(const char* path) { if (!path) return \"\"; FILE* f = fopen(path, \"rb\"); if (!f) return \"\"; fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET); if (sz < 0) { fclose(f); return \"\"; } char* buf = (char*)malloc(sz + 1); if (!buf) { fclose(f); return \"\"; } size_t n = fread(buf, 1, sz, f); buf[n] = 0; fclose(f); return buf; }",
-            "static inline __attribute__((unused)) bool stkt_file_append(const char* path, const char* text) { if (!path) return false; FILE* f = fopen(path, \"a\"); if (!f) return false; if (text) { fputs(text, f); } fclose(f); return true; }",
-            "static inline __attribute__((unused)) int32_t stkt_file_size(const char* path) { if (!path) return -1; FILE* f = fopen(path, \"rb\"); if (!f) return -1; fseek(f, 0, SEEK_END); long sz = ftell(f); fclose(f); return (int32_t)sz; }",
-            "",
-            "/* Stkt Standard OS & Environment Runtime */",
-            "static int __stkt_argc = 0;",
-            "static char** __stkt_argv = NULL;",
-            "static inline __attribute__((unused)) int32_t stkt_args_count() { return (int32_t)__stkt_argc; }",
-            "static inline __attribute__((unused)) stkt_slice_str stkt_get_args() {",
-            "    stkt_slice_str args;",
-            "    STKT_SLICE_INIT(args);",
-            "    for (int i = 0; i < __stkt_argc; i++) {",
-            "        STKT_SLICE_APPEND(args, __stkt_argv[i]);",
-            "    }",
-            "    return args;",
-            "}",
-            "static inline __attribute__((unused)) char* stkt_get_env(const char* key) {",
-            "    if (!key) return \"\";",
-            "    char* v = getenv(key);\n    return v ? v : (char*)\"\";",
-            "    return v ? v : \"\";",
-            "}",
-            "static inline __attribute__((unused)) void stkt_exit(int32_t code) { exit(code); }",
-            'static inline __attribute__((unused)) char* stkt_str_concat(const char* s1, const char* s2) {\n    if (!s1) s1 = "";\n    if (!s2) s2 = "";\n    size_t len1 = strlen(s1);\n    size_t len2 = strlen(s2);\n    char* res = (char*)malloc(len1 + len2 + 1);\n    if (!res) return "";\n    memcpy(res, s1, len1);\n    memcpy(res + len1, s2, len2);\n    res[len1 + len2] = \'\\0\';\n    return res;\n}\nstatic inline __attribute__((unused)) char* stkt_str_slice(const char* s, int32_t start, int32_t end) {\n    if (!s) return "";\n    int32_t len = (int32_t)strlen(s);\n    if (start < 0) start = 0;\n    if (end > len) end = len;\n    if (start >= end) {\n        char* empty = (char*)malloc(1);\n        empty[0] = \'\\0\';\n        return empty;\n    }\n    int32_t sub_len = end - start;\n    char* res = (char*)malloc(sub_len + 1);\n    if (!res) return "";\n    memcpy(res, s + start, sub_len);\n    res[sub_len] = \'\\0\';\n    return res;\n}',
-            "static inline __attribute__((unused)) stkt_slice_str stkt_str_split(const char* s, const char* sep) { stkt_slice_str res; STKT_SLICE_INIT(res); if (!s || !sep) return res; size_t sep_len = strlen(sep); if (sep_len == 0) { STKT_SLICE_APPEND(res, strdup(s)); return res; } const char* curr = s; const char* found; while ((found = strstr(curr, sep)) != NULL) { size_t part_len = found - curr; char* part = (char*)malloc(part_len + 1); memcpy(part, curr, part_len); part[part_len] = 0; STKT_SLICE_APPEND(res, part); curr = found + sep_len; } STKT_SLICE_APPEND(res, strdup(curr)); return res; }",
-            "static inline __attribute__((unused)) char* stkt_str_trim(const char* s) { if (!s) return \"\"; while (*s && isspace((unsigned char)*s)) s++; if (!*s) return strdup(\"\"); const char* end = s + strlen(s) - 1; while (end > s && isspace((unsigned char)*end)) end--; size_t len = end - s + 1; char* res = (char*)malloc(len + 1); memcpy(res, s, len); res[len] = 0; return res; }",
-            "static inline __attribute__((unused)) bool stkt_str_contains(const char* s, const char* sub) { if (!s || !sub) return false; return strstr(s, sub) != NULL; }",
-            "static bool __stkt_has_error = false;",
-            "static inline void __stkt_set_err() { __stkt_has_error = true; }",
-            "static inline void __stkt_clear_err() { __stkt_has_error = false; }",
-                        "/* Stkt Hash Map Runtime */",
-            "typedef struct __stkt_map_entry_str_i32 { char* key; int32_t val; struct __stkt_map_entry_str_i32* next; } __stkt_map_entry_str_i32;",
-            "typedef struct { __stkt_map_entry_str_i32* buckets[64]; int32_t size; } __stkt_map_str_i32;",
-            "static inline __attribute__((unused)) uint32_t __stkt_hash_str(const char* s) { uint32_t h = 2166136261u; if (!s) return 0; while (*s) { h ^= (uint8_t)*s++; h *= 16777619u; } return h; }",
-            "static inline __attribute__((unused)) __stkt_map_str_i32* __stkt_map_create_str_i32() { return (__stkt_map_str_i32*)calloc(1, sizeof(__stkt_map_str_i32)); }",
-            "static inline __attribute__((unused)) void __stkt_map_set_str_i32(__stkt_map_str_i32* m, const char* key, int32_t val) { if (!m || !key) return; uint32_t idx = __stkt_hash_str(key) % 64; __stkt_map_entry_str_i32* curr = m->buckets[idx]; while (curr) { if (strcmp(curr->key, key) == 0) { curr->val = val; return; } curr = curr->next; } __stkt_map_entry_str_i32* entry = (__stkt_map_entry_str_i32*)malloc(sizeof(__stkt_map_entry_str_i32)); entry->key = strdup(key); entry->val = val; entry->next = m->buckets[idx]; m->buckets[idx] = entry; m->size++; }",
-            "static inline __attribute__((unused)) int32_t __stkt_map_get_str_i32(__stkt_map_str_i32* m, const char* key) { if (!m || !key) { __stkt_set_err(); return 0; } uint32_t idx = __stkt_hash_str(key) % 64; __stkt_map_entry_str_i32* curr = m->buckets[idx]; while (curr) { if (strcmp(curr->key, key) == 0) { return curr->val; } curr = curr->next; } __stkt_set_err(); return 0; }",
-            "static inline __attribute__((unused)) bool __stkt_map_has_str_i32(__stkt_map_str_i32* m, const char* key) { if (!m || !key) return false; uint32_t idx = __stkt_hash_str(key) % 64; __stkt_map_entry_str_i32* curr = m->buckets[idx]; while (curr) { if (strcmp(curr->key, key) == 0) return true; curr = curr->next; } return false; }",
-            "static inline __attribute__((unused)) stkt_slice_str __stkt_map_keys_str_i32(__stkt_map_str_i32* m) { stkt_slice_str res; STKT_SLICE_INIT(res); if (!m) return res; for (int i = 0; i < 64; i++) { __stkt_map_entry_str_i32* curr = m->buckets[i]; while (curr) { STKT_SLICE_APPEND(res, curr->key); curr = curr->next; } } return res; }",
-        ]
+        self.needs_slices = False
+        self.needs_strings = False
+        self.needs_hmap = False
+        self.needs_error = False
+        self.needs_io = False
+        self.needs_os = False
+
+        self.detect_features(ast)
+
         if isinstance(ast, Program_Node):
             statements = ast.statements
         elif isinstance(ast, list):
@@ -230,6 +234,20 @@ class CodeGenerator:
         self.emit("return 0;")
         self.indent_level -= 1
         self.emit("}")
+
+        headers = list(RUNTIME_CORE)
+        if self.needs_slices or self.needs_hmap or self.needs_strings or self.needs_os:
+            headers.extend(RUNTIME_SLICES)
+        if self.needs_strings:
+            headers.extend(RUNTIME_STRINGS)
+        if self.needs_error or self.needs_hmap:
+            headers.extend(RUNTIME_ERROR)
+        if self.needs_hmap:
+            headers.extend(RUNTIME_HMAP)
+        if self.needs_io:
+            headers.extend(RUNTIME_IO)
+        if self.needs_os:
+            headers.extend(RUNTIME_OS)
 
         full_code = headers + [""] + func_lines + main_lines
         return "\n".join(full_code)
