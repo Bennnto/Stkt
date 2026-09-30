@@ -1,0 +1,51 @@
+sync "io" as io
+
+onscreen "---------------------------------------------"
+onscreen "    Welcome to Stkt shell (Stkt-sh) v1.0     "
+onscreen "    Type 'help' for commands 'exit' to quit  "
+onscreen "---------------------------------------------"
+
+let running: bool = true
+let filename: str = ""
+let content: str = ""
+
+while running {
+    onscreen "stkt-sh > "
+    let cmd: str = scan(str)
+
+    if cmd == "exit" {
+        onscreen "Goodbye!"
+        running = false
+    } else if cmd == "help" {
+        onscreen "Available Commands:"
+        onscreen "  help  : show this menu"
+        onscreen "  info  : show compiler & runtime info"
+        onscreen "  clear : clear terminal screen"
+        onscreen "  cat   : view file contents"
+        onscreen "  touch : write text to a file"
+        onscreen "  exit  : quit the shell"
+    } else if cmd == "info" {
+        onscreen "Stkt Language v1.0.0"
+        onscreen "Target: Native C compiler with LLVM/GCC backend"
+    } else if cmd == "clear" {
+        onscreen "\033[H\033[J"
+    } else if cmd == "cat" {
+        onscreen "Enter filename:"
+        filename = scan(str)
+        if (io.file_exists(filename)) == false {
+            onscreen "cat: {filename}: No such file or directory"
+        } else {
+            content = io.read_text(filename)
+            onscreen "{content}"
+        }
+    } else if cmd == "touch" {
+        onscreen "Enter filename:"
+        filename = scan(str)
+        onscreen "Enter content:"
+        content = scan(str)
+        io.write_text(filename, content)
+        onscreen "touch: {filename}: Saved content to file"
+    } else {
+        onscreen "stkt-sh: command not found: {cmd}"
+    }
+}

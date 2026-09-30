@@ -150,7 +150,7 @@ class CodeGenerator:
             "static inline __attribute__((unused)) float stkt_scan_f32() { float v = 0.0f; if (scanf(\"%f\", &v) != 1) return 0.0f; return v; }",
             "static inline __attribute__((unused)) double stkt_scan_f64() { double v = 0.0; if (scanf(\"%lf\", &v) != 1) return 0.0; return v; }",
             "static inline __attribute__((unused)) char stkt_scan_char() { char c = 0; if (scanf(\" %c\", &c) != 1) return 0; return c; }",
-            "static inline __attribute__((unused)) char* stkt_scan_str() { char* b = (char*)malloc(1024); if (!b) return \"\"; if (scanf(\"%1023s\", b) != 1) b[0] = 0; return b; }",
+            "static inline __attribute__((unused)) char* stkt_scan_str() { char* b = (char*)malloc(1024); if (!b) return \"\"; if (!fgets(b, 1024, stdin)) { b[0] = 0; return b; } size_t l = strlen(b); if (l > 0 && b[l-1] == \x27\\n\x27) b[l-1] = 0; if (l > 1 && b[l-2] == \x27\\r\x27) b[l-2] = 0; return b; }",
             "static inline __attribute__((unused)) bool stkt_scan_bool() { char b[16]; if (scanf(\"%15s\", b) != 1) return false; return (strcmp(b, \"true\") == 0 || strcmp(b, \"1\") == 0); }",
             "",
             "/* Stkt Standard File IO Runtime */",
