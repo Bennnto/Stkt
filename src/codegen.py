@@ -116,6 +116,7 @@ class CodeGenerator:
             "#include <stdbool.h>",
             "#include <time.h>",
             "#include <setjmp.h>",
+            "#include <ctype.h>",
             "/* Stkt Dynamic Array / Slice Runtime */",
             "#define STKT_SLICE_DEFINE(TYPE, NAME) \\",
             "typedef struct { TYPE* data; size_t len; size_t cap; } __stkt_slice_buf_##NAME; \\",
@@ -179,6 +180,9 @@ class CodeGenerator:
             "}",
             "static inline __attribute__((unused)) void stkt_exit(int32_t code) { exit(code); }",
             'static inline __attribute__((unused)) char* stkt_str_concat(const char* s1, const char* s2) {\n    if (!s1) s1 = "";\n    if (!s2) s2 = "";\n    size_t len1 = strlen(s1);\n    size_t len2 = strlen(s2);\n    char* res = (char*)malloc(len1 + len2 + 1);\n    if (!res) return "";\n    memcpy(res, s1, len1);\n    memcpy(res + len1, s2, len2);\n    res[len1 + len2] = \'\\0\';\n    return res;\n}\nstatic inline __attribute__((unused)) char* stkt_str_slice(const char* s, int32_t start, int32_t end) {\n    if (!s) return "";\n    int32_t len = (int32_t)strlen(s);\n    if (start < 0) start = 0;\n    if (end > len) end = len;\n    if (start >= end) {\n        char* empty = (char*)malloc(1);\n        empty[0] = \'\\0\';\n        return empty;\n    }\n    int32_t sub_len = end - start;\n    char* res = (char*)malloc(sub_len + 1);\n    if (!res) return "";\n    memcpy(res, s + start, sub_len);\n    res[sub_len] = \'\\0\';\n    return res;\n}',
+            "static inline __attribute__((unused)) stkt_slice_str stkt_str_split(const char* s, const char* sep) { stkt_slice_str res; STKT_SLICE_INIT(res); if (!s || !sep) return res; size_t sep_len = strlen(sep); if (sep_len == 0) { STKT_SLICE_APPEND(res, strdup(s)); return res; } const char* curr = s; const char* found; while ((found = strstr(curr, sep)) != NULL) { size_t part_len = found - curr; char* part = (char*)malloc(part_len + 1); memcpy(part, curr, part_len); part[part_len] = 0; STKT_SLICE_APPEND(res, part); curr = found + sep_len; } STKT_SLICE_APPEND(res, strdup(curr)); return res; }",
+            "static inline __attribute__((unused)) char* stkt_str_trim(const char* s) { if (!s) return \"\"; while (*s && isspace((unsigned char)*s)) s++; if (!*s) return strdup(\"\"); const char* end = s + strlen(s) - 1; while (end > s && isspace((unsigned char)*end)) end--; size_t len = end - s + 1; char* res = (char*)malloc(len + 1); memcpy(res, s, len); res[len] = 0; return res; }",
+            "static inline __attribute__((unused)) bool stkt_str_contains(const char* s, const char* sub) { if (!s || !sub) return false; return strstr(s, sub) != NULL; }",
             "static bool __stkt_has_error = false;",
             "static inline void __stkt_set_err() { __stkt_has_error = true; }",
             "static inline void __stkt_clear_err() { __stkt_has_error = false; }",
@@ -491,6 +495,17 @@ class CodeGenerator:
                 desugared_or = Or_Node(expr=wrapped_call, fallback=node.target.fallback)
                 return self.generate_expression(desugared_or)
             obj_t = self.variable.get(node.ident, "")
+            if obj_t == "str" or obj_t.startswith("str["):
+                if isinstance(node.target, Call_Node):
+                    m_name = node.target.ident
+                    args = [self.generate_expression(a) for a in node.target.args]
+                    args_s = ", ".join(args)
+                    if m_name == "split":
+                        return f"stkt_str_split({node.ident}, {args_s})"
+                    elif m_name == "trim":
+                        return f"stkt_str_trim({node.ident})"
+                    elif m_name == "contains":
+                        return f"stkt_str_contains({node.ident}, {args_s})"
             if obj_t.startswith("hmap["):
                 inner = obj_t[5:-1]
                 parts = inner.split(":")

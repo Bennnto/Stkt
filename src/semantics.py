@@ -932,6 +932,36 @@ class SemanticAnalyze:
 
                 else :
                     raise SemanticError(f"hmap has no method '{method_name}'")
+
+            if obj_sym.type_name == "str" or obj_sym.type_name.startswith("str["):
+                if isinstance(node.target, Call_Node):
+                    method_name = node.target.ident
+                    args = node.target.args
+
+                    if method_name == "split":
+                        if len(args) != 1:
+                            raise SemanticError(f"split() expects 1 argument, got {len(args)}")
+                        arg_t = self.infer_type(args[0])
+                        if arg_t != "str" and not arg_t.startswith("str["):
+                            raise SemanticError(f"split() argument must be 'str', got '{arg_t}'")
+                        return "[str]"
+
+                    elif method_name == "trim":
+                        if len(args) != 0:
+                            raise SemanticError(f"trim() expects 0 arguments, got {len(args)}")
+                        return "str"
+
+                    elif method_name == "contains":
+                        if len(args) != 1:
+                            raise SemanticError(f"contains() expects 1 argument, got {len(args)}")
+                        arg_t = self.infer_type(args[0])
+                        if arg_t != "str" and not arg_t.startswith("str["):
+                            raise SemanticError(f"contains() argument must be 'str', got '{arg_t}'")
+                        return "bool"
+
+                    else:
+                        raise SemanticError(f"str has no method '{method_name}'")
+
             if obj_sym is None:
                 raise SemanticError(f"Variable '{obj_name}' is not defined")
 

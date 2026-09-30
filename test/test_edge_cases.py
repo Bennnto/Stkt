@@ -849,3 +849,20 @@ def test_hmap_keys_and_for_in_loop(run_stkt):
     """
     output = run_stkt(code)
     assert "Total fruit count: 50" in output
+
+def test_string_methods_trim_split_contains(run_stkt):
+    code = """
+    let raw: str = "  hello world test  "
+    let clean: str = raw.trim()
+    let has_w: bool = clean.contains("world")
+    let has_z: bool = clean.contains("zebra")
+    let words: [str] = clean.split(" ")
+
+    let w0: str = words[0]
+    let w1: str = words[1]
+    let w2: str = words[2]
+
+    onscreen "clean={clean}, has_w={has_w}, has_z={has_z}, w0={w0}, w1={w1}, w2={w2}"
+    """
+    output = run_stkt(code)
+    assert "clean=hello world test, has_w=true, has_z=false, w0=hello, w1=world, w2=test" in output
