@@ -116,3 +116,15 @@ match code {
     case _   { onscreen "Unknown" }
 }
 ```
+
+#### String 
+2 type of string 
+  - str in heap unknown size
+  - str[n] in stack known size
+```stkt
+let word: str = "hello"
+let word1: str[10] = "hello"
+```
+
+
+
