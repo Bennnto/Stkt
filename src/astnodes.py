@@ -1,6 +1,6 @@
 from ast import expr
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 
 class Node:
     pass
@@ -263,9 +263,15 @@ class Maptype_Node(Node):
 
 @dataclass
 class Mapliteral_Node(Node):
-    items: Optional[List[Any]] = None
+    items: Optional[List[any]] = None
 
 @dataclass
 class Mapitem_Node(Node):
     key : Node
     value : Node
+
+@dataclass
+class Forin_Node(Node):
+    ident : str
+    iter : Node
+    body : Node

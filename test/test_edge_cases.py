@@ -832,3 +832,20 @@ def test_native_hmap_type_mismatch_rejected():
     with pytest.raises(SemanticError) as exc_info:
         sem.analyse(ast)
     assert "Key argument type expected 'str'" in str(exc_info.value)
+
+def test_hmap_keys_and_for_in_loop(run_stkt):
+    code = """
+    let inventory: hmap[str: i32] = {}
+    inventory.set("apple", 10)
+    inventory.set("banana", 25)
+    inventory.set("orange", 15)
+
+    let total: i32 = 0
+    for item in inventory.keys() {
+        let count: i32 = inventory.get(item)
+        total = total + count
+    }
+    onscreen "Total fruit count: {total}"
+    """
+    output = run_stkt(code)
+    assert "Total fruit count: 50" in output

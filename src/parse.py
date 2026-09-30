@@ -52,6 +52,7 @@ from astnodes import (
     Maptype_Node,
     Mapliteral_Node,
     Mapitem_Node,
+    Forin_Node,
 
 )
 #-----------------------------------
@@ -334,11 +335,14 @@ def p_expr_lambda(p):
 #-----------------------------------
 def p_for_stmt(p):
     '''for_stmt : FOR expression SEMICOLON expression SEMICOLON expression block
-                | FOR expression block'''
+                | FOR expression block
+                | FOR IDENT IN expression block'''
     if len(p) == 8 :
         p[0] = For_Node(init=p[2], cond=p[4], iter=p[6], body=p[7])
     elif len(p) == 4 :
         p[0] = For_Node(cond=p[2], body=p[3])
+    elif len(p) == 6 :
+        p[0] = Forin_Node(ident=p[2], iter=p[4], body=p[5])
 
 #-----------------------------------
 # CALL & ARGUMENTS

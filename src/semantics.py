@@ -53,6 +53,7 @@ from astnodes import (
     Maptype_Node,
     Mapliteral_Node,
     Mapitem_Node,
+    Forin_Node
 )
 
 INTEGER_TYPES = {
@@ -594,6 +595,25 @@ class SemanticAnalyze:
                         self.environment.define(sym)
             return "void"
 
+        elif isinstance(node, Forin_Node):
+            self.analyse(node.iter)
+            iter_type =self.infer_type(node.iter)
+            iter_type =iter_type[1:-1]
+            norm_iter_type = "i32" if iter_type == "int" else ("f32" if iter_type == "float" else str(iter_type))
+            prev_env = self.environment
+            self.environment = Environment(parent=prev_env)
+            self.environment.define(Symbol(ident=node.ident, type_name=norm_iter_type))
+            self.loop_depth += 1
+            try :
+                if isinstance(node.body, list):
+                    for stmt in node.body:
+                        self.analyse(stmt)
+                elif node.body is not None:
+                    self.analyse(node.body)
+            finally:
+                self.loop_depth -= 1
+                self.environment = prev_env
+
     def infer_type(self, node):
         if isinstance(node, Len_Node):
             arg_t = self.infer_type(node.array)
@@ -880,7 +900,7 @@ class SemanticAnalyze:
                         raise SemanticError(f"Arguments type mismatch key type expected '{key_norm}' type got '{args_norm}' type")
                     val_norm = "i32" if expected_val == "int" else ("f32" if expected_val == "float" else str(expected_val))
                     return val_norm
-                if method_name == "set":
+                elif method_name == "set":
                     args_size = len(args)
                     if args_size != 2:
                         raise SemanticError(f"Set method requred 2 arguments key | value got {args_size} arguments")
@@ -895,7 +915,7 @@ class SemanticAnalyze:
                     if val_args_norm != val_norm :
                         raise SemanticError(f"Value argument type expected '{val_norm}' type got '{val_args_norm}' type")
                     return "void"
-                if method_name in ("has?", "has"):
+                elif method_name in ("has?", "has"):
                     args_size = len(args)
                     if args_size != 1:
                         raise SemanticError(f"has? method required 1 argument got '{args_size}' arguments")
@@ -905,6 +925,11 @@ class SemanticAnalyze:
                     if key_args_norm != key_norm :
                         raise SemanticError(f"Key argument type expected '{key_norm}' type got '{key_args_norm}' type")
                     return "bool"
+                elif method_name == "keys":
+                    if len(args) != 0 :
+                        raise SemanticError(f"Keys method not required argument")
+                    return f"[{expected_key}]"
+
                 else :
                     raise SemanticError(f"hmap has no method '{method_name}'")
             if obj_sym is None:

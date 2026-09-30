@@ -28,7 +28,7 @@ tokens = (
     'LET', 'CONST', 'ASSIGN', 'IDENT', 'PROCEDURE', 'WHILE', 'IF', 'ELSE', 'LAMBDA',
     'FOR', 'TERNARY', 'RETURN', 'BREAK', 'CONTINUE', 'ONSCREEN', 'SCAN', 'ONKEY',
     'CASE', 'MATCH', 'DEFAULT', 'LOOP', 'STEP', 'TYPE_DEF', 'APPEND', 'LEN', 'POP',
-    'SYNC', 'EXPORT', 'AS', 'ISOK_Q', 'OR_KEY', 'OR', 'HMAP',
+    'SYNC', 'EXPORT', 'AS', 'ISOK_Q', 'OR_KEY', 'OR', 'HMAP', 'IN'
 
 )
 
@@ -117,7 +117,8 @@ reserved_key = {
     'as' : 'AS',
     'or' : 'OR_KEY',
     'or' : 'OR',
-    'hmap' : 'HMAP'
+    'hmap' : 'HMAP',
+    'in' : 'IN',
 
 }
 

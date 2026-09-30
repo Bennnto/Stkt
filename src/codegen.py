@@ -50,6 +50,7 @@ from astnodes import (
     Len_Node,
     Isok_Node,
     Or_Node,
+    Forin_Node
 )
 
 C_TYPEMAP = {
@@ -181,8 +182,15 @@ class CodeGenerator:
             "static bool __stkt_has_error = false;",
             "static inline void __stkt_set_err() { __stkt_has_error = true; }",
             "static inline void __stkt_clear_err() { __stkt_has_error = false; }",
-            '/* Stkt Hash Map Runtime */\ntypedef struct __stkt_map_entry_str_i32 {\n    char* key;\n    int32_t val;\n    struct __stkt_map_entry_str_i32* next;\n} __stkt_map_entry_str_i32;\n\ntypedef struct {\n    __stkt_map_entry_str_i32* buckets[64];\n    int32_t size;\n} __stkt_map_str_i32;\n\nstatic inline __attribute__((unused)) uint32_t __stkt_hash_str(const char* s) {\n    uint32_t h = 2166136261u;\n    if (!s) return 0;\n    while (*s) {\n        h ^= (uint8_t)*s++;\n        h *= 16777619u;\n    }\n    return h;\n}\n\nstatic inline __attribute__((unused)) __stkt_map_str_i32* __stkt_map_create_str_i32() {\n    __stkt_map_str_i32* m = (__stkt_map_str_i32*)calloc(1, sizeof(__stkt_map_str_i32));\n    return m;\n}\n\nstatic inline __attribute__((unused)) void __stkt_map_set_str_i32(__stkt_map_str_i32* m, const char* key, int32_t val) {\n    if (!m || !key) return;\n    uint32_t idx = __stkt_hash_str(key) % 64;\n    __stkt_map_entry_str_i32* curr = m->buckets[idx];\n    while (curr) {\n        if (strcmp(curr->key, key) == 0) {\n            curr->val = val;\n            return;\n        }\n        curr = curr->next;\n    }\n    __stkt_map_entry_str_i32* entry = (__stkt_map_entry_str_i32*)malloc(sizeof(__stkt_map_entry_str_i32));\n    entry->key = strdup(key);\n    entry->val = val;\n    entry->next = m->buckets[idx];\n    m->buckets[idx] = entry;\n    m->size++;\n}\n\nstatic inline __attribute__((unused)) int32_t __stkt_map_get_str_i32(__stkt_map_str_i32* m, const char* key) {\n    if (!m || !key) { __stkt_set_err(); return 0; }\n    uint32_t idx = __stkt_hash_str(key) % 64;\n    __stkt_map_entry_str_i32* curr = m->buckets[idx];\n    while (curr) {\n        if (strcmp(curr->key, key) == 0) {\n            return curr->val;\n        }\n        curr = curr->next;\n    }\n    __stkt_set_err();\n    return 0;\n}\n\nstatic inline __attribute__((unused)) bool __stkt_map_has_str_i32(__stkt_map_str_i32* m, const char* key) {\n    if (!m || !key) return false;\n    uint32_t idx = __stkt_hash_str(key) % 64;\n    __stkt_map_entry_str_i32* curr = m->buckets[idx];\n    while (curr) {\n        if (strcmp(curr->key, key) == 0) {\n            return true;\n        }\n        curr = curr->next;\n    }\n    return false;\n}',
-
+                        "/* Stkt Hash Map Runtime */",
+            "typedef struct __stkt_map_entry_str_i32 { char* key; int32_t val; struct __stkt_map_entry_str_i32* next; } __stkt_map_entry_str_i32;",
+            "typedef struct { __stkt_map_entry_str_i32* buckets[64]; int32_t size; } __stkt_map_str_i32;",
+            "static inline __attribute__((unused)) uint32_t __stkt_hash_str(const char* s) { uint32_t h = 2166136261u; if (!s) return 0; while (*s) { h ^= (uint8_t)*s++; h *= 16777619u; } return h; }",
+            "static inline __attribute__((unused)) __stkt_map_str_i32* __stkt_map_create_str_i32() { return (__stkt_map_str_i32*)calloc(1, sizeof(__stkt_map_str_i32)); }",
+            "static inline __attribute__((unused)) void __stkt_map_set_str_i32(__stkt_map_str_i32* m, const char* key, int32_t val) { if (!m || !key) return; uint32_t idx = __stkt_hash_str(key) % 64; __stkt_map_entry_str_i32* curr = m->buckets[idx]; while (curr) { if (strcmp(curr->key, key) == 0) { curr->val = val; return; } curr = curr->next; } __stkt_map_entry_str_i32* entry = (__stkt_map_entry_str_i32*)malloc(sizeof(__stkt_map_entry_str_i32)); entry->key = strdup(key); entry->val = val; entry->next = m->buckets[idx]; m->buckets[idx] = entry; m->size++; }",
+            "static inline __attribute__((unused)) int32_t __stkt_map_get_str_i32(__stkt_map_str_i32* m, const char* key) { if (!m || !key) { __stkt_set_err(); return 0; } uint32_t idx = __stkt_hash_str(key) % 64; __stkt_map_entry_str_i32* curr = m->buckets[idx]; while (curr) { if (strcmp(curr->key, key) == 0) { return curr->val; } curr = curr->next; } __stkt_set_err(); return 0; }",
+            "static inline __attribute__((unused)) bool __stkt_map_has_str_i32(__stkt_map_str_i32* m, const char* key) { if (!m || !key) return false; uint32_t idx = __stkt_hash_str(key) % 64; __stkt_map_entry_str_i32* curr = m->buckets[idx]; while (curr) { if (strcmp(curr->key, key) == 0) return true; curr = curr->next; } return false; }",
+            "static inline __attribute__((unused)) stkt_slice_str __stkt_map_keys_str_i32(__stkt_map_str_i32* m) { stkt_slice_str res; STKT_SLICE_INIT(res); if (!m) return res; for (int i = 0; i < 64; i++) { __stkt_map_entry_str_i32* curr = m->buckets[i]; while (curr) { STKT_SLICE_APPEND(res, curr->key); curr = curr->next; } } return res; }",
         ]
         if isinstance(ast, Program_Node):
             statements = ast.statements
@@ -498,6 +506,8 @@ class CodeGenerator:
                         return f"__stkt_map_get_{k_t}_{v_t}({node.ident}, {args_s})"
                     elif m_name in ("has", "has?"):
                         return f"__stkt_map_has_{k_t}_{v_t}({node.ident}, {args_s})"
+                    elif m_name == "keys":
+                        return f"__stkt_map_keys_{k_t}_{v_t}({node.ident})"
             if node.ident in self.namespaces:
                 if isinstance(node.target, IsOk_Node):
                     wrapped_call = Typeaccess_Node(ident=node.ident, target=node.target.expr)
@@ -918,3 +928,22 @@ class CodeGenerator:
             elif isinstance(stmt, Typedecl_Node):
                 self.gen_Typedecl_Node(stmt)
                 self.lines.append("")
+
+    def gen_Forin_Node(self, node):
+        ident = node.ident
+        iter_expr = self.generate_expression(node.iter)
+        iter = f"__iter_1_{self.lambda_count}"
+        _idx = f"__idx_{self.lambda_count}"
+        self.lambda_count += 1
+        self.emit(f"stkt_slice_str {iter} = {iter_expr};")
+        self.emit(f"for (int32_t {_idx} = 0; {_idx} < STKT_SLICE_LEN({iter}); {_idx}++) {{")
+        self.indent_level += 1
+        self.variable[ident] = "str"
+        self.emit(f"char* {ident} = {iter}.buf->data[{_idx}];")
+        if isinstance(node.body, list):
+            for stmt in node.body:
+                self.generate_statement(stmt)
+        elif node.body is not None:
+            self.generate_statement(node.body)
+        self.indent_level -= 1
+        self.emit("}")
