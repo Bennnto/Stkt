@@ -7,7 +7,7 @@ from parse import parser
 from lexicals import lexer
 from semantics import SemanticAnalyze
 from codegen import CodeGenerator
-from stktc import find_c_compiler
+from stkt import find_c_compiler
 
 @pytest.fixture
 def run_stkt():

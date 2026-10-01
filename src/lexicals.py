@@ -28,7 +28,7 @@ tokens = (
     'LET', 'CONST', 'ASSIGN', 'IDENT', 'PROCEDURE', 'WHILE', 'IF', 'ELSE', 'LAMBDA',
     'FOR', 'TERNARY', 'RETURN', 'BREAK', 'CONTINUE', 'ONSCREEN', 'SCAN', 'ONKEY',
     'CASE', 'MATCH', 'DEFAULT', 'LOOP', 'STEP', 'TYPE_DEF', 'APPEND', 'LEN', 'POP',
-    'SYNC', 'EXPORT', 'AS', 'ISOK_Q', 'OR_KEY', 'OR', 'HMAP', 'IN'
+    'SYNC', 'EXPORT', 'AS', 'ISOK_Q', 'OR_KEY', 'HMAP', 'IN'
 
 )
 

@@ -929,38 +929,33 @@ class SemanticAnalyze:
                     if len(args) != 0 :
                         raise SemanticError(f"Keys method not required argument")
                     return f"[{expected_key}]"
-
-                else :
-                    raise SemanticError(f"hmap has no method '{method_name}'")
-
-            if obj_sym.type_name == "str" or obj_sym.type_name.startswith("str["):
+            if obj_sym.type_name.startswith("str[") or obj_sym.type_name == "str":
                 if isinstance(node.target, Call_Node):
                     method_name = node.target.ident
                     args = node.target.args
 
                     if method_name == "split":
                         if len(args) != 1:
-                            raise SemanticError(f"split() expects 1 argument, got {len(args)}")
+                            raise SemanticError(f"split() expected 1 argument got {len(args)} arguments")
                         arg_t = self.infer_type(args[0])
                         if arg_t != "str" and not arg_t.startswith("str["):
-                            raise SemanticError(f"split() argument must be 'str', got '{arg_t}'")
+                            raise SemanticError(f"split() argument must be 'str' type got '{arg_t}' type")
                         return "[str]"
 
                     elif method_name == "trim":
-                        if len(args) != 0:
-                            raise SemanticError(f"trim() expects 0 arguments, got {len(args)}")
+                        if len(args) != 0 :
+                            raise SemanticError(f"trim() expected 0 argument got {len(args)} arguments")
                         return "str"
 
                     elif method_name == "contains":
                         if len(args) != 1:
-                            raise SemanticError(f"contains() expects 1 argument, got {len(args)}")
+                            raise SemanticError(f"contain() expected 1 argument got {len(args)} arguments")
                         arg_t = self.infer_type(args[0])
                         if arg_t != "str" and not arg_t.startswith("str["):
-                            raise SemanticError(f"contains() argument must be 'str', got '{arg_t}'")
+                            raise SemanticError(f"contain() argument must be 'str' type got '{arg_t}' type")
                         return "bool"
-
-                    else:
-                        raise SemanticError(f"str has no method '{method_name}'")
+                else :
+                    raise SemanticError(f"str has no method '{method_name}'")
 
             if obj_sym is None:
                 raise SemanticError(f"Variable '{obj_name}' is not defined")
