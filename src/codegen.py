@@ -88,6 +88,7 @@ class CodeGenerator:
         self.namespaces = {}
         self.lines = []
         self.lambda_count = 0
+        self.scopes = []
 
     @property
     def indent_level(self):
@@ -106,6 +107,30 @@ class CodeGenerator:
             self.lines.append(f"{self._indent_str}{text}")
         else:
             self.lines.append("")
+
+    def push_scope(self):
+        self.scopes.append([])
+
+    def pop_scope(self):
+        if self.scopes:
+            return self.scopes.pop()
+        return []
+
+    def register_scope_var(self, ident: str, kind: str):
+        if self.scopes:
+            self.scopes[-1].append((ident, kind))
+
+    def emit_cleanup(self, skip_ident: str = None):
+        if not self.scopes:
+            return
+        for ident, kind in reversed(self.scopes[-1]):
+            if ident == skip_ident:
+                continue
+            if kind == "slice":
+                self.emit(f"STKT_SLICE_FREE({ident});")
+            elif kind == "hmap":
+                self.emit(f"__stkt_map_free_str_i32({ident});")
+
 
 
     def detect_features(self, node):
@@ -229,8 +254,11 @@ class CodeGenerator:
         self.indent_level += 1
         self.emit("__stkt_argc = argc;")
         self.emit("__stkt_argv = argv;")
+        self.push_scope()
         for stmt in main_stmts:
             self.generate_statement(stmt)
+        self.emit_cleanup()
+        self.pop_scope()
         self.emit("return 0;")
         self.indent_level -= 1
         self.emit("}")
@@ -586,6 +614,7 @@ class CodeGenerator:
                 type_name = f"hmap[{k}:{v}]"
                 c_type = f"__stkt_map_{k}_{v}*"
                 self.variable[ident] = type_name
+                self.register_scope_var(ident, "hmap")
                 value = self.generate_expression(node.value)
                 self.emit(f"{c_type} {ident} = {value};")
                 return
@@ -667,11 +696,25 @@ class CodeGenerator:
 
         self.emit(f"{return_c_type} {ident} ({param_str}) {{")
         self.indent_level += 1
+        old_ret_type = getattr(self, "current_proc_ret_type", None)
+        self.current_proc_ret_type = return_c_type
+        self.push_scope()
         if isinstance(node.body, list):
             for stmt in node.body:
                 self.generate_statement(stmt)
         elif node.body is not None:
             self.generate_statement(node.body)
+
+        last_is_return = False
+        if isinstance(node.body, list) and len(node.body) > 0:
+            last_is_return = isinstance(node.body[-1], Return_Node)
+        elif isinstance(node.body, Return_Node):
+            last_is_return = True
+
+        if not last_is_return:
+            self.emit_cleanup()
+        self.pop_scope()
+        self.current_proc_ret_type = old_ret_type
 
         self.indent_level -= 1
         self.emit("}")
@@ -723,10 +766,24 @@ class CodeGenerator:
 
     def gen_Return_Node(self, node: Return_Node):
         if node.value is not None:
-            value = self.generate_expression(node.value)
-            self.emit(f"return {value};")
+            if isinstance(node.value, Ident_Node):
+                self.emit_cleanup(skip_ident=node.value.ident)
+                self.emit(f"return {node.value.ident};")
+            else:
+                val = self.generate_expression(node.value)
+                has_cleanup = bool(self.scopes and self.scopes[-1])
+                if has_cleanup:
+                    c_ret = getattr(self, "current_proc_ret_type", "int32_t")
+                    temp_ret = f"__ret_{self.lambda_count}"
+                    self.lambda_count += 1
+                    self.emit(f"{c_ret} {temp_ret} = {val};")
+                    self.emit_cleanup()
+                    self.emit(f"return {temp_ret};")
+                else:
+                    self.emit(f"return {val};")
         else:
-            self.emit(f"return;")
+            self.emit_cleanup()
+            self.emit("return;")
 
     def gen_Const_Node(self, node: Const_Node):
         ident = node.ident
@@ -904,6 +961,7 @@ class CodeGenerator:
         if slice_type not in ("stkt_slice_i32", "stkt_slice_i64", "stkt_slice_f32", "stkt_slice_f64", "stkt_slice_str"):
             slice_type = "stkt_slice_i32"
         self.variable[node.ident] = slice_type
+        self.register_scope_var(node.ident, "slice")
         if node.elements is not None and not isinstance(node.elements, Arrayliteral_Node) and not isinstance(node.elements, list):
             expr_val = self.generate_expression(node.elements)
             self.emit(f"{slice_type} {node.ident} = {expr_val};")

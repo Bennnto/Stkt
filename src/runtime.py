@@ -53,6 +53,13 @@ RUNTIME_SLICES = [
     "} while(0)",
     "#define STKT_SLICE_POP(s) ((s).buf->data[--((s).buf->len)])",
     "#define STKT_SLICE_LEN(s) ((int32_t)((s).buf->len))",
+    "#define STKT_SLICE_FREE(s) do { \\",
+    "    if ((s).buf) { \\",
+    "        if ((s).buf->data) { free((s).buf->data); (s).buf->data = NULL; } \\",
+    "        free((s).buf); \\",
+    "        (s).buf = NULL; \\",
+    "    } \\",
+    "} while(0)",
 ]
 
 RUNTIME_STRINGS = [
@@ -166,6 +173,19 @@ RUNTIME_HMAP = [
     "        while (curr) { STKT_SLICE_APPEND(res, curr->key); curr = curr->next; }",
     "    }",
     "    return res;",
+    "}",
+    "static inline __attribute__((unused)) void __stkt_map_free_str_i32(__stkt_map_str_i32* m) {",
+    "    if (!m) return;",
+    "    for (int i = 0; i < 64; i++) {",
+    "        __stkt_map_entry_str_i32* curr = m->buckets[i];",
+    "        while (curr) {",
+    "            __stkt_map_entry_str_i32* next = curr->next;",
+    "            if (curr->key) free(curr->key);",
+    "            free(curr);",
+    "            curr = next;",
+    "        }",
+    "    }",
+    "    free(m);",
     "}",
 ]
 

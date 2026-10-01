@@ -866,3 +866,21 @@ def test_string_methods_trim_split_contains(run_stkt):
     """
     output = run_stkt(code)
     assert "clean=hello world test, has_w=true, has_z=false, w0=hello, w1=world, w2=test" in output
+
+
+def test_automatic_scope_memory_cleanup(run_stkt):
+    code = """
+    proc compute: i32() {
+        let s: [i32] = [10, 20, 30]
+        let m: hmap[str: i32] = {}
+        m.set("alpha", 100)
+        let total: i32 = s[0] + s[1] + s[2] + m.get("alpha")
+        return total
+    }
+    let outer_s: [i32] = [5, 15]
+    let res: i32 = compute()
+    let l: i32 = len(outer_s)
+    onscreen "res={res}, s_len={l}"
+    """
+    output = run_stkt(code)
+    assert "res=160, s_len=2" in output
