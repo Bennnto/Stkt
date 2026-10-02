@@ -1,10 +1,13 @@
 # Stkt 
 
+> 📖 **Comprehensive Manual & Story-Driven Guide**: Looking for the full handbook, hands-on tutorial, complete standard library API reference, troubleshooting guide, and performance benchmarks? Read [DOCUMENTATION.md](DOCUMENTATION.md).
+
 ## Table of contents
 - [General Information](#general-information)
 - [Lexicals and Keywords](#lexical-and-keywords)
 - [key Function](key-functions)
 - [Command and Installation](#command-and-installation)
+- [Full Documentation](#full-documentation)
 
 ____
 
@@ -48,42 +51,27 @@ numbers[1] = 10 > [1, 10, 3]
 // Control flow with if/else and if else if 
 if x < 10 {
     x = x + 1
-} else if x = 0 {
-    onscreen(x)
+} else if x == 10 {
+    x = 0
 } else {
     x = x - 1
-} 
-
-// Loop with while support break and continue 
-while x > 0 {
-    x = x - 1
-    if x >= 10 {
-        break;
-    }
 }
 
-// Loop with for support for with condition and C-style increment
-for let i = 0; i < 10; i = i + 1 {
-    onscreen(i)
-}
-```
-
-#### Functions and Lambda Functions
-- Function in stkt use keyword `proc` called `procedure` and support return value 
-- Lambda function use `L` called `lambda`and support return value 
-
-```stkt
-// Procedure proc <name> : <return_type> (parameter)
-proc add:i32 (a: i32, b: i32) {
-    return a + b
+// While loop
+while x < 10 {
+    x = x + 1
 }
 
-// Lambda function L : <return_type> (parameter) 
-let mult = L :i32(x: i32) {
-    return x * 3
+// For loop
+for let i: i32 = 0; i < 10; i = i + 1 {
+    onscreen i
+}
+
+// Loop with step
+loop 10 step 2 {
+    onscreen "Step by 2"
 }
 ```
-
 
 #### Ternary Operator
 
@@ -93,7 +81,6 @@ let mult = L :i32(x: i32) {
 let result:i32 = x > 0 ? x : 0
 
 ```
-
 
 #### Standard Input and Output
 - Output using `onscreen` to display text on the screen
@@ -105,7 +92,6 @@ let name:str = onkey("Your name: ", str)
 onscreen("Hello World")
 ```
 ____
-
 
 #### Match and Case 
 ```stkt
@@ -126,5 +112,16 @@ let word: str = "hello"
 let word1: str[10] = "hello"
 ```
 
+____
 
+### Full Documentation
 
+For the comprehensive language reference, visit [DOCUMENTATION.md](DOCUMENTATION.md):
+- **Prologue & Core Philosophy**: Why Stkt was built and how C99 emission works
+- **Hands-On Tutorial**: 5 progressive steps building up to a native shell (`stkt-sh`)
+- **Data Structures**: Fixed arrays, dynamic slices, native hash maps (`hmap`), custom structs
+- **Standard Library API**: Exhaustive reference for `io`, `string`, `math`, `collections`, `algo`, `os`, `stackt`, `queue`, `set`
+- **Troubleshooting & FAQ**: Common compiler errors, CLI diagnostics, C compiler setup
+- **Testing & Debugging**: `--emit-c` inspection, `lldb`/`gdb` workflows, native unit testing
+- **Performance**: Binary size benchmarks (~16 KB stripped), sub-second compilation speed, zero-overhead C abstraction
+- **Editor Setup**: VS Code TextMate grammar, Neovim/Vim syntax configurations, LSP roadmap

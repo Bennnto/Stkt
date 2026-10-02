@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 from typing import Optional, List, Dict
 
 class Node:
-    pass
+    lineno: Optional[int] = None
+    col_offset: Optional[int] = None
 
 @dataclass
 class Program_Node(Node):

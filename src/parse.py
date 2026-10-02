@@ -55,6 +55,19 @@ from astnodes import (
     Forin_Node,
 
 )
+
+def track_pos(node, p, idx=1):
+    if node is not None and hasattr(p, 'slice') and len(p.slice) > idx:
+        try:
+            node.lineno = p.lineno(idx)
+            lexpos = p.lexpos(idx)
+            if hasattr(p.lexer, 'lexdata') and p.lexer.lexdata:
+                last_nl = p.lexer.lexdata.rfind('\n', 0, lexpos)
+                node.col_offset = (lexpos + 1) if last_nl < 0 else (lexpos - last_nl)
+        except Exception:
+            pass
+    return node
+
 #-----------------------------------
 # PRECEDENCE
 #-----------------------------------
@@ -79,7 +92,7 @@ precedence = (
 
 def p_program(p):
     '''program : statements'''
-    p[0] = Program_Node(statements=p[1])
+    p[0] = track_pos(Program_Node(statements=p[1]), p, 1)
 
 def p_block(p):
     '''block : LBRACE statements RBRACE'''
@@ -140,14 +153,14 @@ def p_type(p):
             | STR_TYPE LBRACKET INT RBRACKET
             | HMAP LBRACKET type COLON type RBRACKET'''
     if len(p) == 2:
-        p[0] = Type_Node(type_name=p[1])
+        p[0] = track_pos(Type_Node(type_name=p[1]), p, 1)
     elif len(p) == 5 :
-        p[0] = Type_Node(type_name=p[1], size=p[3])
+        p[0] = track_pos(Type_Node(type_name=p[1], size=p[3]), p, 1)
     elif len(p) == 7 :
-        p[0] = Maptype_Node(key_type=p[3], val_type=p[5])
+        p[0] = track_pos(Maptype_Node(key_type=p[3], val_type=p[5]), p, 1)
     else:
         inner = p[2].type_name if hasattr(p[2], "type_name") else str(p[2])
-        p[0] = Type_Node(type_name=f"[{inner}]")
+        p[0] = track_pos(Type_Node(type_name=f"[{inner}]"), p, 1)
 
 import re
 
@@ -179,29 +192,29 @@ def p_literals(p):
                   | FALSE'''
     tok_type = p.slice[1].type
     if tok_type == "INT":
-        p[0] = Int_Node(value=int(p[1]))
+        p[0] = track_pos(Int_Node(value=int(p[1])), p, 1)
     elif tok_type == "FLT":
-        p[0] = Float_Node(value=float(p[1]))
+        p[0] = track_pos(Float_Node(value=float(p[1])), p, 1)
     elif tok_type == "STR":
         raw_val = p[1]
         if "{" in raw_val and "}" in raw_val:
             interp_parts = _parse_interpolated_string(raw_val)
             if interp_parts is not None:
-                p[0] = InterpolatedStr_Node(parts=interp_parts)
+                p[0] = track_pos(InterpolatedStr_Node(parts=interp_parts), p, 1)
             else:
-                p[0] = Str_Node(value=raw_val)
+                p[0] = track_pos(Str_Node(value=raw_val), p, 1)
         else:
-            p[0] = Str_Node(value=raw_val)
+            p[0] = track_pos(Str_Node(value=raw_val), p, 1)
     elif tok_type == "CHAR":
-        p[0] = Char_Node(value=p[1])
+        p[0] = track_pos(Char_Node(value=p[1]), p, 1)
     elif tok_type == "TRUE":
-        p[0] = Bool_Node(value=True)
+        p[0] = track_pos(Bool_Node(value=True), p, 1)
     elif tok_type == "FALSE":
-        p[0] = Bool_Node(value=False)
+        p[0] = track_pos(Bool_Node(value=False), p, 1)
 
 def p_expr_ident(p):
     '''expression : IDENT'''
-    p[0] = Ident_Node(ident=p[1])
+    p[0] = track_pos(Ident_Node(ident=p[1]), p, 1)
 
 def p_expr_group(p):
     '''expression : LPAREN expression RPAREN'''
@@ -213,11 +226,11 @@ def p_expr_call(p):
 
 def p_expr_ternary(p):
     '''expression : expression TERNARY expression COLON expression'''
-    p[0] = Ternary_Node(cond=p[1], true_block=p[3], false_block=p[5])
+    p[0] = track_pos(Ternary_Node(cond=p[1], true_block=p[3], false_block=p[5]), p, 2)
 
 def p_expr_cast(p):
     '''expression : LPAREN type RPAREN expression %prec CAST'''
-    p[0] = Cast_Node(target_type=p[2], value=p[4])
+    p[0] = track_pos(Cast_Node(target_type=p[2], value=p[4]), p, 1)
 
 #-----------------------------------
 # BINARY and UNARY OPERATORS
@@ -242,13 +255,13 @@ def p_expr_binop(p):
                   | expression BIT_XOR expression
                   | expression LSHFT expression
                   | expression RSHFT expression'''
-    p[0] = Binaryops_Node(left=p[1], op=p[2], right=p[3])
+    p[0] = track_pos(Binaryops_Node(left=p[1], op=p[2], right=p[3]), p, 2)
 
 def p_expr_unary(p):
     '''expression : SUB expression %prec UMINUS
                   | NOT expression
                   | BIT_NOT expression'''
-    p[0] = Unaryops_Node(operand=p[2], op=p[1])
+    p[0] = track_pos(Unaryops_Node(operand=p[2], op=p[1]), p, 1)
 
 #-----------------------------------
 # REASSIGNMENT
@@ -256,7 +269,7 @@ def p_expr_unary(p):
 
 def p_reassign_stmt(p):
     '''reassign_stmt : IDENT ASSIGN expression'''
-    p[0] = Assign_Node(ident=p[1], value=p[3])
+    p[0] = track_pos(Assign_Node(ident=p[1], value=p[3]), p, 1)
 
 #-----------------------------------
 # TYPE ANNOTATED ASSIGNMENT
@@ -269,13 +282,13 @@ def p_annassign_stmt(p):
                      | LET IDENT COLON LBRACKET type RBRACKET
                      | LET IDENT ASSIGN expression'''
     if len(p) == 7:
-        p[0] = Annassign_Node(ident=p[2], type_name=p[4], value=p[6])
+        p[0] = track_pos(Annassign_Node(ident=p[2], type_name=p[4], value=p[6]), p, 2)
     elif len(p) == 9:
-        p[0] = SliceDecl_Node(ident=p[2], elem_type=p[5], elements=p[8])
+        p[0] = track_pos(SliceDecl_Node(ident=p[2], elem_type=p[5], elements=p[8]), p, 2)
     elif len(p) == 7 and p[3] == ':' and p[4] == '[':
-        p[0] = SliceDecl_Node(ident=p[2], elem_type=p[5], elements=None)
+        p[0] = track_pos(SliceDecl_Node(ident=p[2], elem_type=p[5], elements=None), p, 2)
     else:
-        p[0] = Annassign_Node(ident=p[2], type_name=None, value=p[4])
+        p[0] = track_pos(Annassign_Node(ident=p[2], type_name=None, value=p[4]), p, 2)
 
 #-----------------------------------
 # PROCEDURE & PARAMS
@@ -285,12 +298,13 @@ def p_procedure_stmt(p):
     '''procedure_stmt : PROCEDURE IDENT COLON type LPAREN param_lists RPAREN block
                       | EXPORT PROCEDURE IDENT COLON type LPAREN param_lists RPAREN block'''
     if len(p) == 9 :
-        p[0] = Procedure_Node(ident=p[2], return_type=p[4], param=p[6], body=p[8], is_exported=False)
+        p[0] = track_pos(Procedure_Node(ident=p[2], return_type=p[4], param=p[6], body=p[8], is_exported=False), p, 2)
     else:
-        p[0] = Procedure_Node(ident=p[3], return_type=p[5], param=p[7], body=p[9], is_exported=True)
+        p[0] = track_pos(Procedure_Node(ident=p[3], return_type=p[5], param=p[7], body=p[9], is_exported=True), p, 3)
+
 def p_param(p):
     '''param : IDENT COLON type'''
-    p[0] = Parameter_Node(ident=p[1], type_name=p[3])
+    p[0] = track_pos(Parameter_Node(ident=p[1], type_name=p[3]), p, 1)
 
 def p_param_list(p):
     '''param_lists : param
@@ -312,23 +326,23 @@ def p_if_else_stmt(p):
                     | IF expression block'''
     if len(p) == 6:
         else_branch = p[5] if isinstance(p[5], list) else [p[5]]
-        p[0] = Ifelse_Node(if_cond=p[2], if_body=p[3], else_body=else_branch)
+        p[0] = track_pos(Ifelse_Node(if_cond=p[2], if_body=p[3], else_body=else_branch), p, 1)
     else:
-        p[0] = Ifelse_Node(if_cond=p[2], if_body=p[3], else_body=None)
+        p[0] = track_pos(Ifelse_Node(if_cond=p[2], if_body=p[3], else_body=None), p, 1)
 
 #-----------------------------------
 # WHILE
 #-----------------------------------
 def p_while_stmt(p):
     '''while_stmt : WHILE expression block'''
-    p[0] = While_Node(cond=p[2], body=p[3])
+    p[0] = track_pos(While_Node(cond=p[2], body=p[3]), p, 1)
 
 #-----------------------------------
 # LAMBDA
 #-----------------------------------
 def p_expr_lambda(p):
     '''expression : LAMBDA COLON type LPAREN param_lists RPAREN block'''
-    p[0] = Lambda_Node(param=p[5], return_type=p[3], body=p[7])
+    p[0] = track_pos(Lambda_Node(param=p[5], return_type=p[3], body=p[7]), p, 1)
 
 #-----------------------------------
 # FOR
@@ -338,18 +352,18 @@ def p_for_stmt(p):
                 | FOR expression block
                 | FOR IDENT IN expression block'''
     if len(p) == 8 :
-        p[0] = For_Node(init=p[2], cond=p[4], iter=p[6], body=p[7])
+        p[0] = track_pos(For_Node(init=p[2], cond=p[4], iter=p[6], body=p[7]), p, 1)
     elif len(p) == 4 :
-        p[0] = For_Node(cond=p[2], body=p[3])
+        p[0] = track_pos(For_Node(cond=p[2], body=p[3]), p, 1)
     elif len(p) == 6 :
-        p[0] = Forin_Node(ident=p[2], iter=p[4], body=p[5])
+        p[0] = track_pos(Forin_Node(ident=p[2], iter=p[4], body=p[5]), p, 1)
 
 #-----------------------------------
 # CALL & ARGUMENTS
 #-----------------------------------
 def p_call_stmt(p):
     '''call_stmt : IDENT LPAREN arg_list RPAREN'''
-    p[0] = Call_Node(ident=p[1], args=p[3])
+    p[0] = track_pos(Call_Node(ident=p[1], args=p[3]), p, 1)
 
 def p_argument(p):
     '''argument : expression'''
@@ -373,9 +387,9 @@ def p_return_stmt(p):
     '''return_stmt : RETURN expression
                    | RETURN'''
     if len(p) == 3:
-        p[0] = Return_Node(value=p[2])
+        p[0] = track_pos(Return_Node(value=p[2]), p, 1)
     else:
-        p[0] = Return_Node(value=None)
+        p[0] = track_pos(Return_Node(value=None), p, 1)
 
 #-----------------------------------
 # CONSTANT
@@ -384,27 +398,27 @@ def p_expr_constant(p):
     '''constant_stmt : CONST type IDENT ASSIGN expression
                      | CONST IDENT COLON type ASSIGN expression'''
     if len(p) == 6:
-        p[0] = Const_Node(ident=p[3], type_name=p[2], value=p[5])
+        p[0] = track_pos(Const_Node(ident=p[3], type_name=p[2], value=p[5]), p, 3)
     else:
-        p[0] = Const_Node(ident=p[2], type_name=p[4], value=p[6])
+        p[0] = track_pos(Const_Node(ident=p[2], type_name=p[4], value=p[6]), p, 2)
 
 #-----------------------------------
 # BREAK AND CONTINUE
 #-----------------------------------
 def p_break_stmt(p):
     '''break_stmt : BREAK'''
-    p[0] = Break_Node()
+    p[0] = track_pos(Break_Node(), p, 1)
 
 def p_continue_stmt(p):
     '''continue_stmt : CONTINUE'''
-    p[0] = Continue_Node()
+    p[0] = track_pos(Continue_Node(), p, 1)
 
 #-----------------------------------
 # ONSCREEN
 #-----------------------------------
 def p_onscreen_stmt(p):
     '''onscreen_stmt : ONSCREEN expression'''
-    p[0] = Onscreen_Node(value=p[2])
+    p[0] = track_pos(Onscreen_Node(value=p[2]), p, 1)
 
 #-----------------------------------
 # SCAN
@@ -417,14 +431,11 @@ def p_expr_scan(p):
                   | SCAN LPAREN type RPAREN
                   | SCAN LPAREN expression COMMA type RPAREN'''
     if len(p) == 4:
-        # scan : type
-        p[0] = Scan_Node(target_type=p[3])
+        p[0] = track_pos(Scan_Node(target_type=p[3]), p, 1)
     elif len(p) == 5:
-        # scan(type)
-        p[0] = Scan_Node(target_type=p[3])
+        p[0] = track_pos(Scan_Node(target_type=p[3]), p, 1)
     else:
-        # scan("Enter: ", type)
-        p[0] = Scan_Node(prompt=p[3], target_type=p[5])
+        p[0] = track_pos(Scan_Node(prompt=p[3], target_type=p[5]), p, 1)
 
 #-----------------------------------
 # ARRAY AND INDEX
@@ -448,22 +459,21 @@ def p_array_decl(p):
     '''array_decl : LET IDENT LBRACKET expression RBRACKET COLON type ASSIGN expression
                   | LET IDENT LBRACKET expression RBRACKET COLON type'''
     if len(p) == 10:
-        p[0] = Arraydecl_Node(ident=p[2], size=p[4], type_name=p[7], elements=p[9])
+        p[0] = track_pos(Arraydecl_Node(ident=p[2], size=p[4], type_name=p[7], elements=p[9]), p, 2)
     else:
-        p[0] = Arraydecl_Node(ident=p[2], size=p[4], type_name=p[7], elements=None)
+        p[0] = track_pos(Arraydecl_Node(ident=p[2], size=p[4], type_name=p[7], elements=None), p, 2)
 
 def p_expr_array_literal(p):
     '''expression : LBRACKET elements RBRACKET'''
-    p[0] = Arrayliteral_Node(elements=p[2])
-
+    p[0] = track_pos(Arrayliteral_Node(elements=p[2]), p, 1)
 
 def p_expr_index_access(p):
     '''expression : expression LBRACKET expression RBRACKET'''
-    p[0] = Indexaccess_Node(array=p[1], index=p[3])
+    p[0] = track_pos(Indexaccess_Node(array=p[1], index=p[3]), p, 1)
 
 def p_index_assign_stmt(p):
     '''index_assign_stmt : IDENT LBRACKET expression RBRACKET ASSIGN expression'''
-    p[0] = Indexassign_Node(ident=p[1], index=p[3], value=p[6])
+    p[0] = track_pos(Indexassign_Node(ident=p[1], index=p[3], value=p[6]), p, 1)
 
 #-----------------------------------
 # MATCH AND CASE
@@ -475,11 +485,11 @@ def p_case(p):
             | CASE DEFAULT block'''
     if len(p) == 4:
         if p[2] == "_" or p[2] == "default":
-            p[0] = Case_Node(body=p[3], target=None)
+            p[0] = track_pos(Case_Node(body=p[3], target=None), p, 1)
         else:
-            p[0] = Case_Node(body=p[3], target=p[2])
+            p[0] = track_pos(Case_Node(body=p[3], target=p[2]), p, 1)
     else:
-        p[0] = Case_Node(body=p[2], target=None)
+        p[0] = track_pos(Case_Node(body=p[2], target=None), p, 1)
 
 def p_cases(p):
     '''cases : case
@@ -491,7 +501,7 @@ def p_cases(p):
 
 def p_match_stmt(p):
     '''match_stmt : MATCH expression LBRACE cases RBRACE'''
-    p[0] = Match_Node(cond=p[2], cases=p[4])
+    p[0] = track_pos(Match_Node(cond=p[2], cases=p[4]), p, 1)
 
 #-----------------------------------
 # LOOP AND STEP
@@ -499,22 +509,22 @@ def p_match_stmt(p):
 
 def p_step(p) :
     '''step : STEP expression'''
-    p[0] = Step_Node(value=p[2])
+    p[0] = track_pos(Step_Node(value=p[2]), p, 1)
 
 def p_loop_stmt(p):
     '''loop_stmt : LOOP expression block
                 | LOOP expression step block'''
     if len(p) == 4:
-        p[0] = Loop_Node(time=p[2], body=p[3])
+        p[0] = track_pos(Loop_Node(time=p[2], body=p[3]), p, 1)
     else:
-        p[0] = Loop_Node(time=p[2], body=p[4], step=p[3])
+        p[0] = track_pos(Loop_Node(time=p[2], body=p[4], step=p[3]), p, 1)
 
 #-----------------------------------
 # TYPE DEFINITION AND FIELDS
 #-----------------------------------
 def p_field(p):
     '''field : IDENT COLON type'''
-    p[0] = Field_Node(ident=p[1], type_name=p[3])
+    p[0] = track_pos(Field_Node(ident=p[1], type_name=p[3]), p, 1)
 
 def p_fields(p):
     '''fields : field
@@ -526,11 +536,11 @@ def p_fields(p):
 
 def p_typedef_decl_stmt(p):
     '''typedef_decl_stmt : TYPE_DEF IDENT LBRACE fields RBRACE'''
-    p[0] = Typedecl_Node(ident=p[2], field=p[4])
+    p[0] = track_pos(Typedecl_Node(ident=p[2], field=p[4]), p, 2)
 
 def p_typeaccess_expr(p):
     '''expression : IDENT DOT expression'''
-    p[0] = Typeaccess_Node(ident=p[1], target=p[3])
+    p[0] = track_pos(Typeaccess_Node(ident=p[1], target=p[3]), p, 1)
 
 #-----------------------------------
 # SYNC & EXPORT
@@ -538,44 +548,42 @@ def p_typeaccess_expr(p):
 
 def p_export_stmt(p):
     '''export_stmt : EXPORT IDENT'''
-    p[0] = Export_Node(decl=p[2])
+    p[0] = track_pos(Export_Node(decl=p[2]), p, 1)
 
 def p_append_stmt(p):
     '''append_stmt : APPEND LPAREN expression COMMA expression RPAREN'''
-    p[0] = Append_Node(array=p[3], value=p[5])
-
+    p[0] = track_pos(Append_Node(array=p[3], value=p[5]), p, 1)
 
 def p_expr_pop(p):
     '''expression : POP LPAREN expression RPAREN'''
-    p[0] = Pop_Node(array=p[3])
+    p[0] = track_pos(Pop_Node(array=p[3]), p, 1)
 
 def p_expr_len(p):
     '''expression : LEN LPAREN expression RPAREN'''
-    p[0] = Len_Node(array=p[3])
+    p[0] = track_pos(Len_Node(array=p[3]), p, 1)
 
 def p_sync_stmt(p):
     '''sync_stmt : SYNC expression
                  | SYNC expression AS IDENT'''
     if len(p) == 3:
-        p[0] = Sync_Node(m_path=p[2])
+        p[0] = track_pos(Sync_Node(m_path=p[2]), p, 1)
     else:
-        p[0] = Sync_Node(m_path=p[2], alias=p[4])
-
+        p[0] = track_pos(Sync_Node(m_path=p[2], alias=p[4]), p, 1)
 
 #-----------------------------------
 # ERROR HANDLING
 #-----------------------------------
 def p_expr_slice_access(p):
     '''expression : expression LBRACKET expression DOTDOT expression RBRACKET'''
-    p[0] = SliceAccess_Node(target=p[1], start=p[3], end=p[5])
+    p[0] = track_pos(SliceAccess_Node(target=p[1], start=p[3], end=p[5]), p, 1)
 
 def p_expr_isok(p):
     '''expression : expression DOT ISOK_Q LPAREN expression RPAREN'''
-    p[0] = Isok_Node(expr=p[1], msg=p[5])
+    p[0] = track_pos(Isok_Node(expr=p[1], msg=p[5]), p, 2)
 
 def p_expr_or(p):
     '''expression : expression DOT OR LPAREN expression RPAREN'''
-    p[0] = Or_Node(expr=p[1], fallback=p[5])
+    p[0] = track_pos(Or_Node(expr=p[1], fallback=p[5]), p, 2)
 
 #-----------------------------------
 # HMAP
@@ -583,11 +591,11 @@ def p_expr_or(p):
 
 def p_expr_map_literal(p):
     '''expression : LBRACE map_item_list RBRACE'''
-    p[0] = Mapliteral_Node(items=p[2])
+    p[0] = track_pos(Mapliteral_Node(items=p[2]), p, 1)
 
 def p_map_item(p):
     '''map_item : expression COLON expression'''
-    p[0] = Mapitem_Node(key=p[1], value=p[3])
+    p[0] = track_pos(Mapitem_Node(key=p[1], value=p[3]), p, 1)
 
 def p_map_item_list(p):
     '''map_item_list : map_item
@@ -609,11 +617,26 @@ def p_empty(p):
 
 def p_error(p):
     if p:
-        raise SyntaxError(f"Syntax error at token '{p.value}' on line {p.lineno} at position {p.lexpos}")
+        token = p.value
+        last_nl = p.lexer.lexdata.rfind('\n', 0, p.lexpos)
+        column = (p.lexpos + 1) if last_nl < 0 else (p.lexpos - last_nl)
+
+        raise SyntaxError(
+            f"Unexpected token '{token}'", (None, p.lineno, column, None)
+        )
     else :
-        raise SyntaxError("Syntax error at end of file!")
+        raise SyntaxError("Unexpected end of file!")
 
 #-----------------------------------
 # PARSER
 #-----------------------------------
 parser = yacc.yacc(errorlog=yacc.NullLogger())
+
+_orig_parse = parser.parse
+
+def parse_with_tracking(text, *args, **kwargs):
+    if "tracking" not in kwargs:
+        kwargs["tracking"] = True
+    return _orig_parse(text, *args, **kwargs)
+
+parser.parse = parse_with_tracking
