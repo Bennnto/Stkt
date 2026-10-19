@@ -62,4 +62,5 @@ stkt --help
 ```
 
 ### Documentation
-See Stkt documentation [Documentation](./DOCUMENTATION.md)
+For more detail about syntax and how to use and standard libraries see in 
+[Documentation](./DOCUMENTATION.md)
