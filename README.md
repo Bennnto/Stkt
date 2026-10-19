@@ -1,127 +1,62 @@
 # Stkt 
 
-> 📖 **Comprehensive Manual & Story-Driven Guide**: Looking for the full handbook, hands-on tutorial, complete standard library API reference, troubleshooting guide, and performance benchmarks? Read [DOCUMENTATION.md](DOCUMENTATION.md).
-
 ## Table of contents
 - [General Information](#general-information)
-- [Lexicals and Keywords](#lexical-and-keywords)
-- [key Function](key-functions)
+- [key Functions](key-functions)
 - [Command and Installation](#command-and-installation)
 - [Full Documentation](#full-documentation)
 
 ____
 
 ### General Information
-  Stkt is a statically typed, compiled programming language design for clarity, safety and high performance. It features a clean syntax, type inference, fixed-size arrays, procedures and more compile directly to standard c99 and native machine code using host c toolchains ('clang' or 'gcc').
+  Stkt is a statically typed, self-hosted compiled programming language design for clarity, safety and high performance. It features a clean syntax, type inference, fixed-size arrays, hashmap, functions and more.
 ____
   
+### Key Functions
+- **Functional Programming**: First-class named functions (`fn`) and anonymous lambdas (`L`), with clean module export (`export fn`) and namespaced imports (`incl "..." as ...`).
+- **String Interpolation**: Seamless `{expression}` variable interpolation inside print statements (`onscreen "Hello, {name}!"`) and dynamic string expressions.
+- **Standard Library**: Modular built-in libraries with zero external dependencies—including `time`, `os`, `io`, `string`, `math`, `collections`, `algo`, and `json`.
+- **Active Error Handling**: Expressive, zero-overhead error propagation without heavy exception tables using `.isok?("panic message")` for assertions and `.or(fallback_val)` for safe defaults.
+- **Memory Management**: Dual-tier memory support: stack-allocated fixed strings (`str[N]`) and fast region-based arena allocation (`create_mem`, `mem_reset`, `mem_destroy`) for zero-fragmentation workloads.
+- **Built-in Data Structures**: Native dynamic slices (`[T]`), open-chaining hash maps (`hmap[K: V]`), custom compound `struct`/`type`, and standard library collections (`queue`, `stackt`, `set`).
 
-### Language Syntax Guide
 
-#### Variables and Constants
+### Command and Installation
 
-```stkt
-// Mutable variable with type annotation
-let x: i32 = 42
+#### Fast Installation (Zero-Dependency) 
+stat ships with pre-compiled C amalgamation seed (`bootstrap/stkt.c`) requiring zero python or external dependencies :
 
-// Mutable variable with inferred type 
-let message = "Hello Stkt!"
+```bash
+# Option 1 : Quick installation script (build and install to ~/.local/bin/stkt)
+./install.sh
 
-// Immuatable variable with constant value
-const PI: f32 = 3.1415
-
+# Option 2 : Using Makefile
+make
+make install
 ```
+> [!IMPORTANT]
+> Make sure `~/.local/bin` is in your PATH :export PATH="$HOME/.local/bin:$PATH"
 
-#### Fixed-Size Arrays 
+#### Full 3-Stage Self-Hosted Boostrap
+To verify complete compiler self-hosted from source :
 
-```stkt
-// Declare and initialize an array of 3 integers
-let numbers[3]: i32 = [1, 2 ,3]
-
-// Read an element by index 
-number_0 = numbers[0] > 1
-
-// Mutate an element
-numbers[1] = 10 > [1, 10, 3]
+```bash
+make bootstrap
 ```
+This runs Stage 1 (Python reference), Stage 2 (Stkt compiled by Stage 1), and Stage 3 (Stkt compiled by Stage 2), verifying bit-for-bit identical convergence (`diff -u build/stage2.c build/stage3.c`).
 
-#### Loops and Control Flow
+### CLI Commands
+```bash
+# 1. Run a .stkt file immediately (compile and execute in sandbox)
+stkt run hello.stkt
 
-```stkt
-// Control flow with if/else and if else if 
-if x < 10 {
-    x = x + 1
-} else if x == 10 {
-    x = 0
-} else {
-    x = x - 1
-}
+# short hand
+stkt hello.stkt
 
-// While loop
-while x < 10 {
-    x = x + 1
-}
+# 2. Build standalone executable
+stkt build hello.stkt -o my_app
+./my_app
 
-// For loop
-for let i: i32 = 0; i < 10; i = i + 1 {
-    onscreen i
-}
-
-// Loop with step
-loop 10 step 2 {
-    onscreen "Step by 2"
-}
+# 3. View help and compiler options
+stkt --help
 ```
-
-#### Ternary Operator
-
-```stkt
-// Ternary Operator <condition> ? <true statement> : <false statement>
-
-let result:i32 = x > 0 ? x : 0
-
-```
-
-#### Standard Input and Output
-- Output using `onscreen` to display text on the screen
-- input using `onkey` to read input from the user
-```stkt
-let val :i32 = onkey :i32
-let name:str = onkey("Your name: ", str)
-
-onscreen("Hello World")
-```
-____
-
-#### Match and Case 
-```stkt
-// Match expression with case statements 
-match code {
-    case 200 { onscreen "OK" }
-    case 404 { onscreen "Not Found" }
-    case _   { onscreen "Unknown" }
-}
-```
-
-#### String 
-2 type of string 
-  - str in heap unknown size
-  - str[n] in stack known size
-```stkt
-let word: str = "hello"
-let word1: str[10] = "hello"
-```
-
-____
-
-### Full Documentation
-
-For the comprehensive language reference, visit [DOCUMENTATION.md](DOCUMENTATION.md):
-- **Prologue & Core Philosophy**: Why Stkt was built and how C99 emission works
-- **Hands-On Tutorial**: 5 progressive steps building up to a native shell (`stkt-sh`)
-- **Data Structures**: Fixed arrays, dynamic slices, native hash maps (`hmap`), custom structs
-- **Standard Library API**: Exhaustive reference for `io`, `string`, `math`, `collections`, `algo`, `os`, `stackt`, `queue`, `set`
-- **Troubleshooting & FAQ**: Common compiler errors, CLI diagnostics, C compiler setup
-- **Testing & Debugging**: `--emit-c` inspection, `lldb`/`gdb` workflows, native unit testing
-- **Performance**: Binary size benchmarks (~16 KB stripped), sub-second compilation speed, zero-overhead C abstraction
-- **Editor Setup**: VS Code TextMate grammar, Neovim/Vim syntax configurations, LSP roadmap
