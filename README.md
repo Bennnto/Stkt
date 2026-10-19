@@ -60,3 +60,6 @@ stkt build hello.stkt -o my_app
 # 3. View help and compiler options
 stkt --help
 ```
+
+### Documentation
+See Stkt documentation [Documentation](./DOCUMENTATION.md)
