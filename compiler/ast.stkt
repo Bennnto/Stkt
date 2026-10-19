@@ -1,0 +1,288 @@
+// ==========================================
+// Stkt Self-Hosted Compiler: AST (ast.stkt)
+// ==========================================
+
+// Variable Declaration: let x: i32 = 42
+type LetNode {
+    name: str,
+    type_name: str,
+    val: str,
+    next: i32
+}
+
+// Assignment: count = count + 1
+type AssignNode {
+    name: str,
+    val: str,
+    next: i32
+}
+
+// Loop Statement: while count < 10 { ... }
+type WhileNode {
+    cond: str,
+    body: str,
+    next: i32
+}
+
+// Conditional Statement: if x > 0 { ... } else { ... }
+type IfNode {
+    cond: str,
+    body: str,
+    else_body: str,
+    next: i32
+}
+
+// Output Statement: onscreen count
+type PrintNode {
+    val: str,
+    type_name: str,
+    next: i32
+}
+
+// Return Statement: return x
+type ReturnNode {
+    val: str,
+    next: i32
+}
+
+// Procedure Declaration: fn add: i32(a: i32, b: i32) { ... }
+type ProcNode {
+    name: str,
+    ret_type: str,
+    params: str,
+    body: str,
+    next: i32
+}
+
+// Function Call: add(1, 2)
+type CallNode {
+    name: str,
+    args: str,
+    next: i32
+}
+
+// Array Declaration: let A[5]: i32 = [1, 2, 3, 4, 5]
+type ArrayDeclNode {
+    name: str,
+    size: str,
+    type_name: str,
+    element: str,
+    next: i32
+}
+
+// Array Element Assignment: arr[i] = val
+type IndexAssignNode {
+    name: str,
+    index: str,
+    val: str,
+    next: i32
+}
+
+// Array Element Access: arr[i]
+type IndexAccessNode {
+    name: str,
+    index: str,
+    next: i32
+}
+
+// Type Cast: (i32)x
+type CastNode {
+    target_type: str,
+    val: str,
+    next: i32
+}
+
+// Loop Control: break
+type BreakNode {
+    next: i32
+}
+
+// Loop Control: continue
+type ContinueNode {
+    next: i32
+}
+
+// Constant Declaration: const MAX_SPEED: i32 = 100
+type ConstNode {
+    name: str,
+    type_name: str,
+    val: str,
+    next: i32
+}
+
+// Scan Function: let age: i32 = onkey: i32
+type ScanNode {
+    type_name: str,
+    next: i32
+}
+
+// Interpolated String : "{name} has {score} points"
+type InterpolatedStrNode {
+    fmt_str: str,
+    arg_str: str,
+    next: i32
+}
+
+// C-Style For_loop : for let i: i32 = 0; i < 10; i = i + 1 { <body> }
+type ForNode {
+    init : str,
+    cond : str,
+    iter : str,
+    body : str,
+    next : i32
+}
+// Counted Loop: loop 10 step 2 { <body> }
+type LoopNode {
+    times : str,
+    step_val : str,
+    body : str,
+    next : i32
+}
+
+// Collection Loop : for item in items { <body> }
+type  ForinNode {
+    ident : str,
+    collection : str,
+    body : str,
+    next : i32
+}
+
+// Pattern Matching : Case 1 { <body> }
+type CaseNode {
+    target : str,
+    body : str,
+    is_default : bool,
+    next : i32
+}
+
+// Pattern Matching : Match x { <case> }
+type MatchNode {
+    cond : str,
+    cases_code : str,
+    next : i32
+}
+
+// Ternary Expression : cond ? true : false
+type TernaryNode {
+    cond : str,
+    true_block : str,
+    false_block : str,
+    next : i32
+}
+
+// Unary Expression : -X
+type UnaryNode {
+    operand : str,
+    ops : str,
+    next : i32
+}
+
+// Lambda function  : L: i32(a: i32, b:i32) { a + b }
+type LambdaNode {
+    id : str,
+    ret_type : str,
+    params : str,
+    body : str,
+    next : i32
+}
+
+// Type Declaration or Struct : type Coordinate { x : i32, y: i32, z: ii32}
+type TypeDeclNode {
+    ident : str,
+    fields : str,
+    next : i32
+}
+
+// Field : x : i32
+type FieldNode {
+    ident : str,
+    type_name : str,
+    next : i32
+}
+
+// Filed Access Expression :  coordinate.x = 325
+type TypeAccessNode {
+    target : str,
+    fields : str,
+    next : i32
+}
+
+// Enum Declaration : enum Color { red, green, blue }
+type EnumNode {
+    ident : str,
+    variants : str,
+    next : i32
+}
+
+// Enum Access : Color.red
+type EnumAccessNode {
+    ident : str,
+    variant : str,
+    next : i32
+}
+
+// Unified statement result
+type StmtResult {
+    code: str,
+    next_pos: i32
+}
+
+// Dynamic Slice Declaration: let arr: [i32] = [1, 2]
+type SliceDeclNode {
+    name: str,
+    elem_type: str,
+    elements: str,
+    next: i32
+}
+
+// Slice Append: append(arr, val)
+type AppendNode {
+    arr: str,
+    val: str,
+    next: i32
+}
+
+// Slice Pop: pop(arr)
+type PopNode {
+    arr: str,
+    next: i32
+}
+
+// Safety Assertion: expr.isok?(msg)
+type IsOkNode {
+    expr: str,
+    msg: str,
+    type_name: str,
+    next: i32
+}
+
+type SyncNode {
+    module_path : str,
+    alias : str,
+    next : i32
+}
+// Fallback Operator: expr.or(fallback)
+type OrNode {
+    expr: str,
+    fallback: str,
+    type_name: str,
+    next: i32
+}
+
+
+
+type RuntimeFeatures {
+    needs_slices : bool,
+    needs_strings : bool,
+    needs_hmap : bool,
+    needs_io : bool,
+    needs_os: bool,
+    needs_error: bool,
+    needs_time : bool
+}
+
+type ProgramParts {
+    types: str,
+    decls: str,
+    procs: str
+}

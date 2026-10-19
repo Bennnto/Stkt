@@ -6,7 +6,7 @@
 // 1. Basic Arithmetic, Bounds & Properties
 // ------------------------------------------
 
-export proc abs :i32(n: i32) {
+export fn abs :i32(n: i32) {
     if n < 0 {
         return -n
     } else {
@@ -14,7 +14,7 @@ export proc abs :i32(n: i32) {
     }
 }
 
-export proc sign :i32(n: i32) {
+export fn sign :i32(n: i32) {
     if n > 0 {
         return 1
     } else {
@@ -26,7 +26,7 @@ export proc sign :i32(n: i32) {
     }
 }
 
-export proc max :i32(a: i32, b: i32) {
+export fn max :i32(a: i32, b: i32) {
     if a > b {
         return a
     } else {
@@ -34,7 +34,7 @@ export proc max :i32(a: i32, b: i32) {
     }
 }
 
-export proc min :i32(a: i32, b: i32) {
+export fn min :i32(a: i32, b: i32) {
     if a < b {
         return a
     } else {
@@ -42,7 +42,7 @@ export proc min :i32(a: i32, b: i32) {
     }
 }
 
-export proc clamp :i32(v: i32, low: i32, high: i32) {
+export fn clamp :i32(v: i32, low: i32, high: i32) {
     if v < low {
         return low
     } else {
@@ -54,15 +54,15 @@ export proc clamp :i32(v: i32, low: i32, high: i32) {
     }
 }
 
-export proc in_range :bool(v: i32, low: i32, high: i32) {
+export fn in_range :bool(v: i32, low: i32, high: i32) {
     return v >= low && v <= high
 }
 
-export proc is_even :bool(n: i32) {
+export fn is_even :bool(n: i32) {
     return n % 2 == 0
 }
 
-export proc is_odd :bool(n: i32) {
+export fn is_odd :bool(n: i32) {
     return n % 2 != 0
 }
 
@@ -70,7 +70,7 @@ export proc is_odd :bool(n: i32) {
 // 2. Powers, Roots & Exponents
 // ------------------------------------------
 
-export proc pow_int :i32(base: i32, exp: i32) {
+export fn pow_int :i32(base: i32, exp: i32) {
     if exp < 0 {
         return 0
     }
@@ -81,7 +81,7 @@ export proc pow_int :i32(base: i32, exp: i32) {
     return res
 }
 
-export proc sqrt_int :i32(n: i32) {
+export fn sqrt_int :i32(n: i32) {
     if n <= 0 {
         return 0
     }
@@ -97,7 +97,7 @@ export proc sqrt_int :i32(n: i32) {
     return x
 }
 
-export proc cbrt_int :i32(n: i32) {
+export fn cbrt_int :i32(n: i32) {
     if n <= 0 {
         return 0
     }
@@ -113,7 +113,7 @@ export proc cbrt_int :i32(n: i32) {
     return x
 }
 
-export proc hypot_int :i32(a: i32, b: i32) {
+export fn hypot_int :i32(a: i32, b: i32) {
     return sqrt_int((a * a) + (b * b))
 }
 
@@ -121,7 +121,7 @@ export proc hypot_int :i32(a: i32, b: i32) {
 // 3. Number Theory & Divisibility
 // ------------------------------------------
 
-export proc gcd :i32(a: i32, b: i32) {
+export fn gcd :i32(a: i32, b: i32) {
     let x: i32 = abs(a)
     let y: i32 = abs(b)
     while y != 0 {
@@ -132,14 +132,14 @@ export proc gcd :i32(a: i32, b: i32) {
     return x
 }
 
-export proc lcm :i32(a: i32, b: i32) {
+export fn lcm :i32(a: i32, b: i32) {
     if a == 0 || b == 0 {
         return 0
     }
     return abs(a * b) / gcd(a, b)
 }
 
-export proc is_prime :bool(n: i32) {
+export fn is_prime :bool(n: i32) {
     if n <= 1 {
         return false
     }
@@ -159,7 +159,7 @@ export proc is_prime :bool(n: i32) {
     return true
 }
 
-export proc next_prime :i32(n: i32) {
+export fn next_prime :i32(n: i32) {
     if n <= 1 {
         return 2
     }
@@ -172,7 +172,7 @@ export proc next_prime :i32(n: i32) {
     }
 }
 
-export proc factorial :i32(n: i32) {
+export fn factorial :i32(n: i32) {
     if n < 0 {
         return 0
     }
@@ -182,14 +182,14 @@ export proc factorial :i32(n: i32) {
     return n * factorial(n - 1)
 }
 
-export proc permutations :i32(n: i32, k: i32) {
+export fn permutations :i32(n: i32, k: i32) {
     if k < 0 || k > n {
         return 0
     }
     return factorial(n) / factorial(n - k)
 }
 
-export proc combinations :i32(n: i32, k: i32) {
+export fn combinations :i32(n: i32, k: i32) {
     if k < 0 || k > n {
         return 0
     }
@@ -200,14 +200,14 @@ export proc combinations :i32(n: i32, k: i32) {
 // 4. Bitwise Operations & Binary Manipulations
 // ------------------------------------------
 
-export proc is_power_of_two :bool(n: i32) {
+export fn is_power_of_two :bool(n: i32) {
     if n <= 0 {
         return false
     }
     return (n & (n - 1)) == 0
 }
 
-export proc next_power_of_two :i32(n: i32) {
+export fn next_power_of_two :i32(n: i32) {
     if n <= 0 {
         return 1
     }
@@ -218,7 +218,7 @@ export proc next_power_of_two :i32(n: i32) {
     return p
 }
 
-export proc count_ones :i32(n: i32) {
+export fn count_ones :i32(n: i32) {
     let count: i32 = 0
     let x: i32 = n
     while x != 0 {
@@ -228,11 +228,11 @@ export proc count_ones :i32(n: i32) {
     return count
 }
 
-export proc count_zeros :i32(n: i32) {
+export fn count_zeros :i32(n: i32) {
     return 32 - count_ones(n)
 }
 
-export proc rotate_left :i32(n: i32, shift: i32) {
+export fn rotate_left :i32(n: i32, shift: i32) {
     let s: i32 = shift % 32
     if s < 0 {
         s = s + 32
@@ -243,7 +243,7 @@ export proc rotate_left :i32(n: i32, shift: i32) {
     return (n << s) | (n >> (32 - s))
 }
 
-export proc rotate_right :i32(n: i32, shift: i32) {
+export fn rotate_right :i32(n: i32, shift: i32) {
     let s: i32 = shift % 32
     if s < 0 {
         s = s + 32

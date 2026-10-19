@@ -1,0 +1,51 @@
+incl "compiler/token.stkt"
+incl "compiler/ast.stkt"
+incl "compiler/runtime.stkt"
+incl "compiler/lexer.stkt"
+incl "compiler/codegen.stkt"
+incl "io"
+incl "os"
+incl "compiler/parse.stkt"
+
+onscreen "========================================"
+onscreen "=== Stkt Self-Hosted Compiler (v1.0) ==="
+onscreen "========================================"
+
+let args: [str] = get_args()
+let count: i32 = arg_count()
+
+if count <= 1 || args[1] == "-h" || args[1] == "--help" {
+    onscreen "Usage: stkt <command> [options]"
+    onscreen "  stkt run <file.stkt>            compile and run immediately"
+    onscreen "  stkt build <file.stkt> -o <bin> compile to standalone binary"
+    stkt_exit(0)
+}
+let mode: str = "run"
+let source_file: str = ""
+let output_bin: str = "output"
+if count >= 5 && args[3] == "-o" {
+    output_bin = args[4]
+}
+if args[1] == "run" {
+    mode = "run"
+    source_file = args[2]
+} else if args[1] == "build" {
+    mode = "build"
+    source_file = args[2]
+} else {
+    // shorthand : stkt hello.stkt -> run directly
+    mode = "run"
+    source_file = args[1]
+}
+
+let program_source: str = read_text(source_file)
+let full_c: str = parse_program(program_source)
+write_text("compiler/generated_output.c", full_c)
+let cmd: str = ""
+if mode == "build" {
+    cmd = "cc -O3 compiler/generated_output.c -o " + output_bin
+    system_cmd(cmd)
+} else if mode == "run" {
+    cmd = "cc -O3 compiler/generated_output.c -o .stkt_tmp && ./.stkt_tmp; rm -f .stkt_tmp"
+    system_cmd(cmd)
+}

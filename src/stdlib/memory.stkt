@@ -1,0 +1,24 @@
+// ======================================================
+// Stkt Standard Library: Memory Management (memory.stkt)
+// ======================================================
+
+type Arena {
+    handle: i64
+}
+
+export fn create_mem: Arena(chunk_size: i32) {
+    let h: i64 = stkt_arena_create(chunk_size)
+    return Arena(h)
+}
+
+export fn mem_alloc_str: str(arena: Arena, text: str) {
+    return stkt_arena_alloc_str(arena.handle, text)
+}
+
+export fn mem_reset: void(arena: Arena) {
+    stkt_arena_reset(arena.handle)
+}
+
+export fn mem_destroy: void(arena: Arena) {
+    stkt_arena_destroy(arena.handle)
+}

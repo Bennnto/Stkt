@@ -1,0 +1,23 @@
+// ==========================================
+// Stkt Standard Library: TIME (time.stkt)
+// ==========================================
+
+export fn now_ms :i64() {
+    return stkt_time_now_ms()
+}
+
+export fn now_us :i64() {
+    return stkt_time_now_us()
+}
+
+export fn sleep_ms :void(ms: i32) {
+    stkt_time_sleep_ms(ms)
+}
+
+export fn sleep_sec :void(sec: i32) {
+    stkt_time_sleep_ms(sec * 1000)
+}
+
+export fn elapsed_ms :i64(start_ms: i64) {
+    return stkt_time_now_ms() - start_ms
+}

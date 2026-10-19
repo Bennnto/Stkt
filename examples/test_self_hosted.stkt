@@ -1,0 +1,34 @@
+incl "time"
+
+fn fib: i32(n: i32) {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+fn factorial: i32(n: i32) {
+    let res: i32 = 1
+    let i: i32 = 2
+    while i <= n {
+        res = res * i
+        i = i + 1
+    }
+    return res
+}
+
+onscreen "========================================"
+onscreen "Hello from Stkt Self-Hosted Compiler!"
+onscreen "========================================"
+
+let f10: i32 = fib(10)
+onscreen "fib(10):"
+onscreen f10
+
+let fact5: i32 = factorial(5)
+onscreen "factorial(5):"
+onscreen fact5
+
+let t_now: i64 = now_ms()
+onscreen "Current timestamp ms:"
+onscreen t_now

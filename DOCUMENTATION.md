@@ -1079,6 +1079,63 @@ set.set_remove(s, 42) // returns true
 
 ---
 
+### `sync "time"` (Clock & Sleep Primitives)
+The `time` module provides low-overhead POSIX timing functions using `gettimeofday` and `usleep`:
+
+- `now_ms() -> i64`: Returns current epoch timestamp in milliseconds.
+- `now_us() -> i64`: Returns current epoch timestamp in microseconds.
+- `sleep_ms(ms: i32) -> void`: Suspends execution for the specified milliseconds.
+- `sleep_sec(sec: i32) -> void`: Suspends execution for the specified seconds.
+- `elapsed_ms(start_ms: i64) -> i64`: Computes milliseconds elapsed since `start_ms`.
+
+```stkt
+sync "time" as t
+
+let start: i64 = t.now_ms()
+t.sleep_ms(15)
+let took: i64 = t.elapsed_ms(start)
+onscreen "Execution took: {took} ms"
+```
+
+---
+
+### `sync "json"` (JSON Serializer & Parser)
+The `json` module provides field extraction, serialization, and whole-object dictionary parsing:
+
+#### Value Extractors
+- `has_key(json_str: str, key: str) -> bool`: Checks if the specified key exists in the JSON string.
+- `get_str(json_str: str, key: str) -> str`: Extracts the string value for `key`. Sets active error on missing key.
+- `get_int(json_str: str, key: str) -> i32`: Extracts and parses integer value for `key`. Supports negative numbers and sets error flag if missing.
+- `get_bool(json_str: str, key: str) -> bool`: Extracts boolean `true` / `false` for `key`. Sets error flag if missing.
+
+#### Whole-Object Serialization & Deserialization
+- `dump_object(m: hmap[str: str]) -> str`: Serializes a hash map into a standard JSON string `{"key": "val", ...}`.
+- `parse_object(json_str: str) -> hmap[str: str]`: Parses a JSON object string into a native `hmap[str: str]` hash map.
+
+#### Primitive Stringifiers
+- `stringify_str(val: str) -> str`: Escapes and wraps string in quotes (`"val"`).
+- `stringify_i32(val: i32) -> str`: Converts integer to string JSON representation.
+- `stringify_bool(val: bool) -> str`: Returns `"true"` or `"false"`.
+- `stringify_kv(key: str, val_json: str) -> str`: Formats a JSON key-value pair `"key": val_json`.
+
+```stkt
+sync "json" as j
+
+// Extracting fields directly
+let payload: str = "{\"service\": \"auth\", \"port\": 8080, \"active\": true}"
+let port: i32 = j.get_int(payload, "port")
+let timeout: i32 = j.get_int(payload, "timeout").or(30)
+
+// Parsing whole JSON into hash map
+let config: hmap[str: str] = j.parse_object(payload)
+onscreen "Service: {config.get(\"service\")}"
+
+// Serializing hash map back to JSON
+let dumped: str = j.dump_object(config)
+```
+
+---
+
 ## 14. Troubleshooting & FAQ
 
 When compiling or running Stkt programs, errors are categorized into **Syntax Errors** (lexical/grammar phase), **Semantic Errors** (type checking and scope resolution), **C Compiler Failures**, and **CLI / Runtime Issues**.

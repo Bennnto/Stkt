@@ -1,0 +1,15 @@
+type Point {
+    x: i32,
+    y: i32,
+}
+
+let pt: Point = Point(10, 20)
+onscreen pt.x
+onscreen pt.y
+
+pt.x = 99
+onscreen pt.x
+
+let r: f32 = math.sqrt(16.0)
+onscreen r
+onscreen "Type access, field assignment, and module call all passed!"

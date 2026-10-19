@@ -3,15 +3,19 @@
 // ==========================================
 //
 
-export proc arg_count: i32(){
+export fn arg_count: i32(){
     return stkt_args_count()
 }
 
-export proc get_args: [str](){
+export fn get_args: [str](){
     return stkt_get_args()
 }
 
-export proc get_env: str(key: str){
+export fn get_env: str(key: str){
     return stkt_get_env(key)
 
+}
+
+export fn system_cmd: i32(cmd: str) {
+    return stkt_system(cmd)
 }

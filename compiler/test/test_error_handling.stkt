@@ -1,0 +1,63 @@
+// ==========================================
+// Stkt Test: Error Handling (.isok? and .or)
+// ==========================================
+
+fn safe_div: i32(a: i32, b: i32) {
+    if b == 0 {
+        __stkt_set_err()
+        return 0
+    }
+    return a / b
+}
+
+fn parse_status_code: str(code: i32) {
+    if code == 200 {
+        return "OK"
+    }
+    if code == 404 {
+        return "NOT_FOUND"
+    }
+    __stkt_set_err()
+    return ""
+}
+
+onscreen "=== TEST ERROR HANDLING ==="
+
+// 1. Success with .isok?
+let good_val: i32 = safe_div(100, 4).isok?("Divide failed")
+onscreen good_val
+
+// 2. Fallback with .or for integers
+let err_val: i32 = safe_div(100, 0).or(42)
+onscreen err_val
+
+let normal_val: i32 = safe_div(50, 5).or(42)
+onscreen normal_val
+
+// 3. Fallback with .or for strings
+let s_good: str = parse_status_code(200).or("UNKNOWN")
+onscreen s_good
+
+let s_bad: str = parse_status_code(500).or("DEFAULT_STATUS")
+onscreen s_bad
+
+// 4. Hash map error handling with .or and .isok?
+let config: hmap[str: str] = {}
+config.set("env", "production")
+
+let env_val: str = config.get("env").isok?("Env missing")
+onscreen env_val
+
+let port_val: str = config.get("port").or("3000")
+onscreen port_val
+
+let counts: hmap[str: i32] = {}
+counts.set("retries", 3)
+
+let r_ok: i32 = counts.get("retries").or(0)
+onscreen r_ok
+
+let r_missing: i32 = counts.get("timeout").or(5000)
+onscreen r_missing
+
+onscreen "=== ALL ERROR HANDLING TESTS PASSED ==="

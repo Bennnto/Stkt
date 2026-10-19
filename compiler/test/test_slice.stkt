@@ -1,0 +1,19 @@
+let arr: [i32] = [10, 20]
+onscreen len(arr)
+onscreen arr[0]
+onscreen arr[1]
+
+append(arr, 30)
+append(arr, 40)
+onscreen len(arr)
+onscreen arr[2]
+onscreen arr[3]
+
+let last_val: i32 = pop(arr)
+onscreen last_val
+onscreen len(arr)
+
+arr[1] = 99
+onscreen arr[1]
+
+onscreen "Dynamic slices test passed successfully!"

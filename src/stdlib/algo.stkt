@@ -2,7 +2,7 @@
 // Stkt Standard Library: Algorithms (algo.stkt)
 // ======================================================
 
-export proc sort_i32 :void(arr: [i32]) {
+export fn sort_i32 :void(arr: [i32]) {
     let n: i32 = len(arr)
     let i: i32 = 0
 
@@ -20,7 +20,7 @@ export proc sort_i32 :void(arr: [i32]) {
     }
 }
 
-export proc binary_search :i32(arr: [i32], target: i32) {
+export fn binary_search :i32(arr: [i32], target: i32) {
     let low: i32 = 0
     let high :i32 = len(arr) - 1
     while low <= high {
@@ -38,7 +38,7 @@ export proc binary_search :i32(arr: [i32], target: i32) {
     return -1
 }
 
-export proc reverse_i32: void(arr: [i32]){
+export fn reverse_i32: void(arr: [i32]){
     let left :i32 = 0
     let right :i32 = len(arr) - 1
     while left < right {

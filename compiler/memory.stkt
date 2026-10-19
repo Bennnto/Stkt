@@ -1,0 +1,81 @@
+type Arena {
+    buffer: [i32],
+    capacity: i32,
+    offset: i32
+}
+
+type Chunk {
+    capacity: i32,
+    offset: i32
+}
+
+type ChainedArena {
+    chunk_caps: [i32],
+    chunk_offsets: [i32],
+    active_chunk: i32,
+    total_allocated: i32
+}
+
+export fn create_arena: Arena(cap: i32) {
+    let buf: [i32] = []
+    return Arena(buf, cap, 0)
+}
+
+export fn arena_alloc_offset: i32(arena: Arena, size: i32) {
+    if arena.offset + size > arena.capacity {
+        return -1
+    }
+    return arena.offset
+}
+
+export fn arena_advance: Arena(arena: Arena, size: i32) {
+    let new_offset: i32 = arena.offset + size
+    return Arena(arena.buffer, arena.capacity, new_offset)
+}
+
+export fn arena_reset: Arena(arena: Arena) {
+    return Arena(arena.buffer, arena.capacity, 0)
+}
+
+export fn create_chained: ChainedArena(initial_cap: i32) {
+    let caps: [i32] = []
+    append(caps, initial_cap)
+    let offsets: [i32] = []
+    append(offsets, 0)
+    return ChainedArena(caps, offsets, 0, 0)
+}
+
+export fn chained_alloc: ChainedArena(arena: ChainedArena, size: i32) {
+    let caps: [i32] = arena.chunk_caps
+    let offsets: [i32] = arena.chunk_offsets
+    let act: i32 = arena.active_chunk
+    let curr_cap: i32 = caps[act]
+    let curr_offset: i32 = offsets[act]
+    if curr_offset + size <= curr_cap {
+        offsets[act] = curr_offset + size
+        return arena
+    }
+    let new_cap: i32 = curr_cap * 2
+    let next_chunk: i32 = act + 1
+    append(caps, new_cap)
+    append(offsets, size)
+    return ChainedArena(caps, offsets, next_chunk, 0)
+}
+
+export fn chained_reset: ChainedArena(arena: ChainedArena) {
+    let new_offsets: [i32] = []
+    append(new_offsets, 0)
+    return ChainedArena(arena.chunk_caps, new_offsets, 0, 0)
+}
+
+let chain: ChainedArena = create_chained(50)
+onscreen chain.active_chunk
+
+chain = chained_alloc(chain, 30)
+onscreen chain.active_chunk
+
+chain = chained_alloc(chain, 40)
+onscreen chain.active_chunk
+
+chain = chained_reset(chain)
+onscreen chain.active_chunk

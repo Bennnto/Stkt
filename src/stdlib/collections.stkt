@@ -2,7 +2,7 @@
 // Stkt Standard Library: Collections (collections.stkt)
 // ======================================================
 
-export proc sum_i32 :i32(arr: [i32]) {
+export fn sum_i32 :i32(arr: [i32]) {
     let i: i32 = 0
     let total: i32 = 0
     while i < len(arr) {
@@ -12,7 +12,7 @@ export proc sum_i32 :i32(arr: [i32]) {
     return total
 }
 
-export proc contain_i32 :bool(arr: [i32], val: i32) {
+export fn contain_i32 :bool(arr: [i32], val: i32) {
     let i: i32 = 0
     while i < len(arr) {
         if arr[i] == val {
@@ -23,7 +23,7 @@ export proc contain_i32 :bool(arr: [i32], val: i32) {
     return false
 }
 
-export proc max_elem :i32(arr: [i32]) {
+export fn max_elem :i32(arr: [i32]) {
     let highest: i32 = arr[0]
     let i: i32 = 1
     while i < len(arr) {
@@ -35,7 +35,7 @@ export proc max_elem :i32(arr: [i32]) {
     return highest
 }
 
-export proc min_elem :i32(arr: [i32]) {
+export fn min_elem :i32(arr: [i32]) {
     let lowest: i32 = arr[0]
     let i: i32 = 1
     while i < len(arr) {
@@ -47,7 +47,7 @@ export proc min_elem :i32(arr: [i32]) {
     return lowest
 }
 
-export proc count_elem :i32(arr: [i32], val: i32) {
+export fn count_elem :i32(arr: [i32], val: i32) {
     let i: i32 = 0
     let count: i32 = 0
     while i < len(arr) {
@@ -59,7 +59,7 @@ export proc count_elem :i32(arr: [i32], val: i32) {
     return count
 }
 
-export proc index_of :i32(arr: [i32], val: i32) {
+export fn index_of :i32(arr: [i32], val: i32) {
     let i: i32 = 0
     while i < len(arr) {
         if arr[i] == val {

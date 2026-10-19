@@ -1,7 +1,8 @@
-from runtime import RUNTIME_CORE, RUNTIME_SLICES, RUNTIME_STRINGS, RUNTIME_ERROR, RUNTIME_HMAP, RUNTIME_IO, RUNTIME_OS
+from runtime import RUNTIME_CORE, RUNTIME_SLICES, RUNTIME_STRINGS, RUNTIME_ERROR, RUNTIME_HMAP, RUNTIME_IO, RUNTIME_OS, RUNTIME_TIME
 from pathlib import Path
 from semantics import resolve_module_path
 from astnodes import (
+    Enum_Node,
     Program_Node,
     Int_Node,
     Float_Node,
@@ -51,7 +52,9 @@ from astnodes import (
     Len_Node,
     Isok_Node,
     Or_Node,
-    Forin_Node
+    Forin_Node,
+    Enum_Node,
+    Enumaccess_Node
 )
 
 C_TYPEMAP = {
@@ -79,16 +82,35 @@ C_TYPEMAP = {
 }
 
 
+def _norm_type_str(t) -> str:
+    if t is None:
+        return 'void'
+    if hasattr(t, 'key_type') and hasattr(t, 'val_type'):
+        k = _norm_type_str(t.key_type)
+        v = _norm_type_str(t.val_type)
+        return f'hmap[{k}:{v}]'
+    if hasattr(t, 'type_name'):
+        return str(t.type_name)
+    return str(t)
+
 class CodeGenerator:
     def __init__(self):
         self.variable = {}
         self._indent_level = 0
         self._indent_str = ""
-        self.functions = []
+        self.type_lines = []
+        self.forward_decl_lines = []
+        self.proc_lines = []
+        self.seen_decls = set()
+        self.functions = self.proc_lines
         self.namespaces = {}
         self.lines = []
         self.lambda_count = 0
         self.scopes = []
+        self.enum_names = set()
+        self.struct_names = set()
+        self.struct_fields = {}
+        self.imported_modules = set()
 
     @property
     def indent_level(self):
@@ -120,16 +142,24 @@ class CodeGenerator:
         if self.scopes:
             self.scopes[-1].append((ident, kind))
 
-    def emit_cleanup(self, skip_ident: str = None):
-        if not self.scopes:
+    def emit_cleanup(self, skip_ident: str = None, skip_all: bool = False):
+        if not self.scopes or skip_all:
             return
         for ident, kind in reversed(self.scopes[-1]):
             if ident == skip_ident:
                 continue
             if kind == "slice":
                 self.emit(f"STKT_SLICE_FREE({ident});")
-            elif kind == "hmap":
-                self.emit(f"__stkt_map_free_str_i32({ident});")
+            elif kind.startswith("hmap"):
+                t = self.variable.get(ident, "")
+                if t.startswith("hmap["):
+                    inner = t[5:-1]
+                    parts = inner.split(":")
+                    k_t = parts[0].strip()
+                    v_t = parts[1].strip()
+                    self.emit(f"__stkt_map_free_{k_t}_{v_t}({ident});")
+                else:
+                    self.emit(f"__stkt_map_free_str_i32({ident});")
 
 
 
@@ -163,6 +193,13 @@ class CodeGenerator:
                 self.needs_os = True
                 self.needs_slices = True
             elif mod == "string":
+                self.needs_strings = True
+                self.needs_error = True
+            elif mod == "time":
+                self.needs_time = True
+            elif mod == "json":
+                self.needs_hmap = True
+                self.needs_slices = True
                 self.needs_strings = True
                 self.needs_error = True
             else:
@@ -222,6 +259,7 @@ class CodeGenerator:
         self.needs_error = False
         self.needs_io = False
         self.needs_os = False
+        self.needs_time = False
 
         self.detect_features(ast)
 
@@ -232,17 +270,25 @@ class CodeGenerator:
         else:
             statements = [ast]
 
-        func_lines = []
+        self.type_lines = []
+        self.forward_decl_lines = []
+        self.proc_lines = []
+        self.seen_decls = set()
         main_lines = []
 
-        self.functions = func_lines
-        self.lines = func_lines
+        self.functions = self.proc_lines
+        self.lines = self.proc_lines
         self.indent_level = 0
 
         main_stmts = []
         for stmt in statements:
-            if isinstance(stmt, (Procedure_Node, Typedecl_Node)):
-                self.gen_Procedure_Node(stmt)
+            if isinstance(stmt, (Procedure_Node, Typedecl_Node, Enum_Node)):
+                if isinstance(stmt, Enum_Node):
+                    self.gen_Enum_Node(stmt)
+                elif isinstance(stmt, Typedecl_Node):
+                    self.gen_Typedecl_Node(stmt)
+                else:
+                    self.gen_Procedure_Node(stmt)
                 self.lines.append("")
             elif isinstance(stmt, Sync_Node):
                 self.gen_Sync_Node(stmt)
@@ -276,8 +322,10 @@ class CodeGenerator:
             headers.extend(RUNTIME_IO)
         if self.needs_os:
             headers.extend(RUNTIME_OS)
+        if self.needs_time:
+            headers.extend(RUNTIME_TIME)
 
-        full_code = headers + [""] + func_lines + main_lines
+        full_code = headers + [""] + self.type_lines + [""] + self.forward_decl_lines + [""] + self.proc_lines + main_lines
         return "\n".join(full_code)
 
     def generate_statement(self, statement):
@@ -323,6 +371,56 @@ class CodeGenerator:
             if node.op in ("<", ">", "<=", ">=", "==", "!=", "&&", "||"):
                 return "bool"
             return lt
+        elif isinstance(node, Typeaccess_Node):
+            if node.ident in self.namespaces:
+                fn_name = node.target.ident if hasattr(node.target, "ident") else str(node.target)
+                if fn_name in ("get_str", "stringify_str", "stringify_kv", "stringify_bool", "stringify_i32", "dump_object", "read_text"):
+                    return "str"
+                elif fn_name in ("has_key", "has", "file_exists"):
+                    return "bool"
+                elif fn_name in ("get_int", "file_size"):
+                    return "i32"
+                elif fn_name in ("parse_object",):
+                    return "hmap[str:str]"
+            obj_t = self.variable.get(node.ident, "")
+            if obj_t in self.struct_fields:
+                f_name = node.target.ident if hasattr(node.target, 'ident') else str(node.target)
+                return self.struct_fields[obj_t].get(f_name, "i32")
+            if obj_t.startswith("hmap["):
+                m_name = node.target.ident if hasattr(node.target, "ident") else str(node.target)
+                if m_name == "get":
+                    inner = obj_t[5:-1]
+                    return inner.split(":")[1].strip()
+                elif m_name in ("has", "has?"):
+                    return "bool"
+                elif m_name == "keys":
+                    inner = obj_t[5:-1]
+                    return f"[{inner.split(':')[0].strip()}]"
+            if obj_t == "str" or obj_t.startswith("str["):
+                m_name = node.target.ident if hasattr(node.target, "ident") else str(node.target)
+                if m_name in ("trim",):
+                    return "str"
+                elif m_name in ("split",):
+                    return "[str]"
+                elif m_name in ("contains",):
+                    return "bool"
+        elif isinstance(node, Indexaccess_Node):
+            arr_name = node.array.ident if hasattr(node.array, 'ident') else self.generate_expression(node.array)
+            arr_t = self.variable.get(arr_name, "")
+            if arr_t.startswith("stkt_slice_"):
+                return arr_t[len("stkt_slice_"):]
+            if arr_t.startswith("[") and arr_t.endswith("]"):
+                return arr_t[1:-1]
+            if arr_t == "str" or arr_t.startswith("str["):
+                return "char"
+            return "i32"
+        elif isinstance(node, Call_Node):
+            if node.ident == "len":
+                return "i32"
+        elif isinstance(node, Unaryops_Node):
+            if node.op == "!":
+                return "bool"
+            return self.infer_expression_type(node.operand)
         return "i32"
 
     def generate_expression(self, node):
@@ -383,8 +481,9 @@ class CodeGenerator:
 
             fmt_string = "".join(format_specifiers)
             arg_str = ", " + ", ".join(c_args) if c_args else ""
-            self.emit(f"char* {buf_name} = (char*)malloc(1024);")
-            self.emit(f'if ({buf_name}) snprintf({buf_name}, 1024, "{fmt_string}"{arg_str});')
+            self.emit(f"int __len_{buf_name} = snprintf(NULL, 0, \"{fmt_string}\"{arg_str});")
+            self.emit(f"char* {buf_name} = (char*)malloc(__len_{buf_name} + 1);")
+            self.emit(f'if ({buf_name}) snprintf({buf_name}, __len_{buf_name} + 1, "{fmt_string}"{arg_str});')
             return buf_name
 
         elif isinstance(node, Ident_Node):
@@ -464,6 +563,8 @@ class CodeGenerator:
                 return f"STKT_SLICE_APPEND({arr}, {val})"
             args = [self.generate_expression(arg) for arg in node.args]
             arg_str = ", ".join(args)
+            if node.ident in self.struct_names:
+                return f"({node.ident}){{{arg_str}}}"
             return f"{node.ident}({arg_str})"
 
         elif isinstance(node, Ternary_Node):
@@ -585,6 +686,8 @@ class CodeGenerator:
                 target_str = self.generate_expression(node.target)
                 return f"{node.ident}_{target_str}"
             target_str = self.generate_expression(node.target) if hasattr(node.target, "ident") else str(node.target)
+            if node.ident in self.enum_names:
+                return f"{node.ident}_{target_str}"
             return f"{node.ident}.{target_str}"
 
         elif isinstance(node, IsOk_Node):
@@ -605,6 +708,9 @@ class CodeGenerator:
             self.lambda_count += 1
             return f"({{{c_type} {temp_val} = {expr_val}; if (__stkt_has_error) {{ __stkt_clear_err();{temp_val} = {fallback}; }} {temp_val}; }})"
 
+        elif isinstance(node, Enumaccess_Node):
+            return f"{node.ident}_{node.variant}"
+
     def gen_Annassign_Node(self, node: Annassign_Node):
         ident = node.ident
         if node.type_name is not None:
@@ -615,7 +721,10 @@ class CodeGenerator:
                 c_type = f"__stkt_map_{k}_{v}*"
                 self.variable[ident] = type_name
                 self.register_scope_var(ident, "hmap")
-                value = self.generate_expression(node.value)
+                if isinstance(node.value, Mapliteral_Node):
+                    value = f"__stkt_map_create_{k}_{v}()"
+                else:
+                    value = self.generate_expression(node.value)
                 self.emit(f"{c_type} {ident} = {value};")
                 return
             type_name = node.type_name.type_name if hasattr(node.type_name, "type_name") else str(node.type_name)
@@ -625,7 +734,7 @@ class CodeGenerator:
                 value = self.generate_expression(node.value)
                 self.emit(f"char {ident}[{cap}] = {value};")
                 return
-            c_type = C_TYPEMAP.get(type_name, "int32_t")
+            c_type = C_TYPEMAP.get(type_name, type_name)
             self.variable[ident] = type_name
         else:
             type_name = self.infer_expression_type(node.value)
@@ -639,7 +748,7 @@ class CodeGenerator:
                 value = self.generate_expression(node.value)
                 self.emit(f"{ret_c} (*{ident})({param_str}) = {value};")
                 return
-            c_type = C_TYPEMAP.get(type_name, "int32_t")
+            c_type = C_TYPEMAP.get(type_name, type_name)
         value = self.generate_expression(node.value)
         self.emit(f"{c_type} {ident} = {value};")
 
@@ -675,25 +784,38 @@ class CodeGenerator:
 
     def gen_Procedure_Node(self, node: Procedure_Node):
         ident = node.ident
-        return_type = node.return_type.type_name if hasattr(node.return_type, 'type_name') else str(node.return_type)
-        return_c_type = C_TYPEMAP.get(return_type, "int32_t")
+        return_type = _norm_type_str(node.return_type)
+        if return_type.startswith("hmap["):
+            inner = return_type[5:-1]
+            parts = inner.split(":")
+            return_c_type = f"__stkt_map_{parts[0].strip()}_{parts[1].strip()}*"
+        else:
+            return_c_type = C_TYPEMAP.get(return_type, return_type)
         param_list = []
         for p in node.param:
             p_name = p.ident
-            p_type = p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name)
-            if hasattr(p.type_name, "size") and p.type_name.size is not None and p_type == "str":
+            p_type = _norm_type_str(p.type_name)
+            if hasattr(p.type_name, "size") and p.type_name.size is not None and getattr(p.type_name, "type_name", "") == "str":
                 p_c_type = "char*"
                 self.variable[p_name] = f"str[{p.type_name.size}]"
+            elif p_type.startswith("hmap["):
+                inner = p_type[5:-1]
+                parts = inner.split(":")
+                p_c_type = f"__stkt_map_{parts[0].strip()}_{parts[1].strip()}*"
+                self.variable[p_name] = p_type
             elif p_type.startswith("[") and p_type.endswith("]"):
                 elem_t = p_type[1:-1]
                 p_c_type = f"stkt_slice_{elem_t}"
                 self.variable[p_name] = p_c_type
             else:
-                p_c_type = C_TYPEMAP.get(p_type, 'int32_t')
+                p_c_type = C_TYPEMAP.get(p_type, p_type)
                 self.variable[p_name] = p_type
             param_list.append(f"{p_c_type} {p_name}")
         param_str = ", ".join(param_list) if param_list else "void"
 
+        if ident not in self.seen_decls:
+            self.seen_decls.add(ident)
+            self.forward_decl_lines.append(f"{return_c_type} {ident} ({param_str});")
         self.emit(f"{return_c_type} {ident} ({param_str}) {{")
         self.indent_level += 1
         old_ret_type = getattr(self, "current_proc_ret_type", None)
@@ -766,14 +888,17 @@ class CodeGenerator:
 
     def gen_Return_Node(self, node: Return_Node):
         if node.value is not None:
+            c_ret = getattr(self, "current_proc_ret_type", "int32_t")
+            # If returning a struct or slice, do not free any local slices as they may be returned or embedded!
+            is_struct_or_slice_ret = c_ret not in ("int32_t", "int64_t", "float", "double", "bool", "char", "void")
             if isinstance(node.value, Ident_Node):
-                self.emit_cleanup(skip_ident=node.value.ident)
+                if not is_struct_or_slice_ret:
+                    self.emit_cleanup(skip_ident=node.value.ident)
                 self.emit(f"return {node.value.ident};")
             else:
                 val = self.generate_expression(node.value)
-                has_cleanup = bool(self.scopes and self.scopes[-1])
+                has_cleanup = bool(self.scopes and self.scopes[-1]) and not is_struct_or_slice_ret
                 if has_cleanup:
-                    c_ret = getattr(self, "current_proc_ret_type", "int32_t")
                     temp_ret = f"__ret_{self.lambda_count}"
                     self.lambda_count += 1
                     self.emit(f"{c_ret} {temp_ret} = {val};")
@@ -931,11 +1056,17 @@ class CodeGenerator:
         self.emit("}")
 
     def gen_Typedecl_Node(self, node: Typedecl_Node):
+        self.struct_names.add(node.ident)
+        fields_map = {}
+        for f in node.field:
+            f_t = f.type_name.type_name if hasattr(f.type_name, 'type_name') else str(f.type_name)
+            fields_map[f.ident] = f_t
+        self.struct_fields[node.ident] = fields_map
         old_lines = self.lines
         old_indent = self.indent_level
 
-        # Emit at top-level functions/headers section
-        self.lines = self.functions
+        # Emit at top-level type section
+        self.lines = self.type_lines
         self.indent_level = 0
 
         self.emit(f"typedef struct {{")
@@ -986,6 +1117,12 @@ class CodeGenerator:
     def gen_Sync_Node(self, node):
         raw_path = node.m_path.value if hasattr(node.m_path, "value") else str(node.m_path)
         module_path = resolve_module_path(raw_path)
+        resolved_key = str(module_path.resolve())
+        alias = getattr(node, "alias", None)
+        if not alias and resolved_key in self.imported_modules:
+            return
+        if not alias:
+            self.imported_modules.add(resolved_key)
         with open(module_path, "r") as f:
             code = f.read()
         from parse import parser
@@ -1003,12 +1140,25 @@ class CodeGenerator:
                     self.namespaces[alias].add(stmt.ident)
                     # Emit alias wrapper: ret_c alias_ident(params) { return ident(args); }
                     ret_type = stmt.return_type.type_name if hasattr(stmt.return_type, "type_name") else str(stmt.return_type)
-                    ret_c = C_TYPEMAP.get(ret_type, "int32_t")
+                    ret_type = _norm_type_str(stmt.return_type)
+                    if ret_type.startswith("hmap["):
+                        inner = ret_type[5:-1]
+                        parts = inner.split(":")
+                        ret_c = f"__stkt_map_{parts[0].strip()}_{parts[1].strip()}*"
+                    else:
+                        ret_c = C_TYPEMAP.get(ret_type, ret_type)
                     p_decls = []
                     p_args = []
                     for p in stmt.param:
-                        p_t = p.type_name.type_name if hasattr(p.type_name, "type_name") else str(p.type_name)
-                        p_c = f"stkt_slice_{p_t[1:-1]}" if (p_t.startswith("[") and p_t.endswith("]")) else C_TYPEMAP.get(p_t, "int32_t")
+                        p_t = _norm_type_str(p.type_name)
+                        if p_t.startswith("hmap["):
+                            inner = p_t[5:-1]
+                            parts = inner.split(":")
+                            p_c = f"__stkt_map_{parts[0].strip()}_{parts[1].strip()}*"
+                        elif p_t.startswith("[") and p_t.endswith("]"):
+                            p_c = f"stkt_slice_{p_t[1:-1]}"
+                        else:
+                            p_c = C_TYPEMAP.get(p_t, p_t)
                         p_decls.append(f"{p_c} {p.ident}")
                         p_args.append(p.ident)
                     decl_str = ", ".join(p_decls) if p_decls else "void"
@@ -1018,6 +1168,9 @@ class CodeGenerator:
                     self.lines.append("")
             elif isinstance(stmt, Typedecl_Node):
                 self.gen_Typedecl_Node(stmt)
+                self.lines.append("")
+            elif isinstance(stmt, Enum_Node):
+                self.gen_Enum_Node(stmt)
                 self.lines.append("")
 
     def gen_Forin_Node(self, node):
@@ -1038,3 +1191,23 @@ class CodeGenerator:
             self.generate_statement(node.body)
         self.indent_level -= 1
         self.emit("}")
+
+    def gen_Enum_Node(self, node):
+        self.enum_names.add(node.ident)
+        old_lines = self.lines
+        old_indent = self.indent_level
+
+        self.lines = self.type_lines
+        self.indent_level = 0
+
+        self.emit("typedef enum {")
+        self.indent_level += 1
+        for i, variant in enumerate(node.variants):
+            comma = "," if i < len(node.variants) - 1 else ""
+            self.emit(f"{node.ident}_{variant} = {i}{comma}")
+        self.indent_level -= 1
+        self.emit(f"}} {node.ident};")
+        self.emit("")
+
+        self.lines = old_lines
+        self.indent_level = old_indent

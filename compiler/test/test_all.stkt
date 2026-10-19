@@ -1,0 +1,389 @@
+// ============================================================
+// Stkt Self-Hosted Compiler — Comprehensive Feature Test
+//
+// Covers every statement and expression type supported by the
+// self-hosted compiler (compiler/parse.stkt + codegen.stkt):
+//
+//   const · let (i32 / bool / f32 / str) · arithmetic
+//   comparisons · unary (! -) · if/else · while (break/continue)
+//   loop/step · arrays · ternary · match/case · proc · lambda
+//   type-cast · str re-assignment · bool variable printing (fixed)
+// ============================================================
+
+
+// ============================================================
+// PROCEDURE DEFINITIONS  (emitted before main by parse_program)
+// ============================================================
+
+fn square: i32(n: i32) {
+    return n * n
+}
+
+fn max_of: i32(a: i32, b: i32) {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+fn min_of: i32(a: i32, b: i32) {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+fn is_positive: bool(n: i32) {
+    if n > 0 {
+        return true
+    }
+    return false
+}
+
+fn is_zero: bool(n: i32) {
+    if n == 0 {
+        return true
+    }
+    return false
+}
+
+fn factorial: i32(n: i32) {
+    let result: i32 = 1
+    let k: i32 = 1
+    while k <= n {
+        result = result * k
+        k = k + 1
+    }
+    return result
+}
+
+fn sum_to: i32(n: i32) {
+    let acc: i32 = 0
+    let j: i32 = 1
+    while j <= n {
+        acc = acc + j
+        j = j + 1
+    }
+    return acc
+}
+
+fn abs_val: i32(n: i32) {
+    if n < 0 {
+        return -n
+    }
+    return n
+}
+
+
+// ============================================================
+// 1. CONSTANTS
+// Expected: 50  0  Stkt
+// ============================================================
+
+onscreen "--- 1. Constants ---"
+
+const HALF: i32 = 50
+const ZERO_C: i32 = 0
+const LANG: str = "Stkt"
+
+onscreen HALF
+onscreen ZERO_C
+onscreen LANG
+
+
+// ============================================================
+// 2. TYPED VARIABLES  (bool printing is the fixed bug)
+// Expected: 99  true  false  3.140000  hello
+// ============================================================
+
+onscreen "--- 2. Typed Variables ---"
+
+let v_i32: i32 = 99
+let v_bool_t: bool = true
+let v_bool_f: bool = false
+let v_f32: f32 = 3.14
+let v_str: str = "hello"
+
+onscreen v_i32
+onscreen v_bool_t
+onscreen v_bool_f
+onscreen v_f32
+onscreen v_str
+
+
+// ============================================================
+// 3. ARITHMETIC  (+  -  *  /)
+// Expected: 42  37  42  25
+// ============================================================
+
+onscreen "--- 3. Arithmetic ---"
+
+let r_add: i32 = 15 + 27
+let r_sub: i32 = 50 - 13
+let r_mul: i32 = 6 * 7
+let r_div: i32 = 100 / 4
+
+onscreen r_add
+onscreen r_sub
+onscreen r_mul
+onscreen r_div
+
+
+// ============================================================
+// 4. COMPARISONS  (>  <  ==  !=  <=  >=)
+// Expected: true  true  true  true  true  true
+// ============================================================
+
+onscreen "--- 4. Comparisons ---"
+
+let cmp_gt: bool = 10 > 5
+let cmp_lt: bool = 3 < 8
+let cmp_eq: bool = 7 == 7
+let cmp_ne: bool = 4 != 9
+let cmp_le: bool = 5 <= 5
+let cmp_ge: bool = 6 >= 3
+
+onscreen cmp_gt
+onscreen cmp_lt
+onscreen cmp_eq
+onscreen cmp_ne
+onscreen cmp_le
+onscreen cmp_ge
+
+
+// ============================================================
+// 5. UNARY OPERATORS  (!  -)
+// Expected: -42  true  false  -5  true
+// ============================================================
+
+onscreen "--- 5. Unary Operators ---"
+
+let u_neg: i32 = -42
+let u_not_f: bool = !false
+let u_not_t: bool = !true
+
+onscreen u_neg
+onscreen u_not_f
+onscreen u_not_t
+
+onscreen -5
+onscreen !false
+
+
+// ============================================================
+// 6. IF / ELSE
+// Expected: B-grade  pass
+// ============================================================
+
+onscreen "--- 6. If / Else ---"
+
+let score: i32 = 85
+
+if score >= 90 {
+    onscreen "A-grade"
+}
+if score >= 80 {
+    onscreen "B-grade"
+}
+if score < 60 {
+    onscreen "F-grade"
+}
+
+let label: str = "pass"
+if score < 60 {
+    label = "fail"
+}
+onscreen label
+
+
+// ============================================================
+// 7. WHILE LOOP  (continue + break)
+// Expected: 1  2  4  5  then 5
+// ============================================================
+
+onscreen "--- 7. While (continue + break) ---"
+
+let cnt: i32 = 0
+while cnt < 5 {
+    cnt = cnt + 1
+    if cnt == 3 {
+        continue
+    }
+    onscreen cnt
+}
+
+let brk: i32 = 0
+while brk < 10 {
+    brk = brk + 1
+    if brk == 5 {
+        break
+    }
+}
+onscreen brk
+
+
+// ============================================================
+// 8. LOOP / STEP  (counted loop)
+// Expected: 5  5
+// ============================================================
+
+onscreen "--- 8. Loop / Step ---"
+
+let ticks: i32 = 0
+loop 5 {
+    ticks = ticks + 1
+}
+onscreen ticks
+
+let steps: i32 = 0
+loop 10 step 2 {
+    steps = steps + 1
+}
+onscreen steps
+
+
+// ============================================================
+// 9. ARRAYS  (declare · access · index-assign)
+// Expected: 10  30  50  99
+// ============================================================
+
+onscreen "--- 9. Arrays ---"
+
+let arr[5]: i32 = [10, 20, 30, 40, 50]
+
+onscreen arr[0]
+onscreen arr[2]
+onscreen arr[4]
+
+arr[1] = 99
+onscreen arr[1]
+
+
+// ============================================================
+// 10. TERNARY  (only valid in let / assign / return)
+// Expected: 100  0  true
+// ============================================================
+
+onscreen "--- 10. Ternary ---"
+
+let t_big: i32 = 10 > 5 ? 100 : 200
+let t_sml: i32 = 3 > 9 ? 1 : 0
+let t_bool: bool = 7 == 7 ? true : false
+
+onscreen t_big
+onscreen t_sml
+onscreen t_bool
+
+
+// ============================================================
+// 11. MATCH / CASE / DEFAULT
+// Expected: Two  Other
+// ============================================================
+
+onscreen "--- 11. Match / Case ---"
+
+let mc_code: i32 = 2
+match mc_code {
+    case 1 {
+        onscreen "One"
+    }
+    case 2 {
+        onscreen "Two"
+    }
+    case 3 {
+        onscreen "Three"
+    }
+    default {
+        onscreen "Other"
+    }
+}
+
+let mc_code2: i32 = 9
+match mc_code2 {
+    case 1 {
+        onscreen "One"
+    }
+    case 2 {
+        onscreen "Two"
+    }
+    default {
+        onscreen "Other"
+    }
+}
+
+
+// ============================================================
+// 12. PROCEDURES  (call with literals and single identifiers)
+// Expected: 81  7  3  true  false  true  120  15
+// ============================================================
+
+onscreen "--- 12. Procedures ---"
+
+let p_sq: i32 = square(9)
+onscreen p_sq
+
+let p_max: i32 = max_of(3, 7)
+onscreen p_max
+
+let p_min: i32 = min_of(3, 7)
+onscreen p_min
+
+let p_pos: bool = is_positive(5)
+let p_neg: bool = is_positive(-3)
+let p_zero: bool = is_zero(0)
+
+onscreen p_pos
+onscreen p_neg
+onscreen p_zero
+
+let p_fact: i32 = factorial(5)
+onscreen p_fact
+
+let p_sum: i32 = sum_to(5)
+onscreen p_sum
+
+
+// ============================================================
+// 13. LAMBDA  (anonymous function assigned to variable)
+// Expected: 15  30
+// ============================================================
+
+onscreen "--- 13. Lambda ---"
+
+let triple = L :i32(n: i32) {
+    return n * 3
+}
+
+onscreen triple(5)
+onscreen triple(10)
+
+
+// ============================================================
+// 14. TYPE CAST
+// Expected: 255
+// ============================================================
+
+onscreen "--- 14. Type Cast ---"
+
+let casted: i32 = (i32)255
+onscreen casted
+
+
+// ============================================================
+// 15. STRING RE-ASSIGNMENT
+// Expected: open  closed
+// ============================================================
+
+onscreen "--- 15. String Reassignment ---"
+
+let state: str = "open"
+onscreen state
+state = "closed"
+onscreen state
+
+
+// ============================================================
+// DONE
+// ============================================================
+
+onscreen "=== ALL TESTS COMPLETE ==="

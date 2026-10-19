@@ -53,6 +53,7 @@ from astnodes import (
     Mapliteral_Node,
     Mapitem_Node,
     Forin_Node,
+    Enum_Node,
 
 )
 
@@ -82,6 +83,7 @@ precedence = (
     ("left", "GT", "LT", "GE", "LE", "LSHFT", "RSHFT"),
     ("left", "ADD", "SUB"),
     ("left", "MUL", "DIV", "MOD"),
+    ("left", "DOT"),
     ("right", "NOT", "BIT_NOT", "UMINUS", "CAST"),
     ("left", "LBRACKET"),
 )
@@ -118,7 +120,8 @@ def p_statement(p):
                  | typedef_decl_stmt
                  | sync_stmt
                  | export_stmt
-                 | append_stmt'''
+                 | append_stmt
+                 | enum_decl_stmt'''
     p[0] = p[1]
 
 def p_statements(p):
@@ -132,28 +135,36 @@ def p_statements(p):
 #-----------------------------------
 # TYPE AND LITERAL
 #-----------------------------------
+def p_primitive_type(p):
+    '''primitive_type : I8
+                      | I16
+                      | I32
+                      | I64
+                      | U8
+                      | U16
+                      | U32
+                      | U64
+                      | F32
+                      | F64
+                      | STR_TYPE
+                      | INT_TYPE
+                      | BOOL_TYPE
+                      | CHAR_TYPE
+                      | FLT_TYPE
+                      | VOID'''
+    p[0] = track_pos(Type_Node(type_name=p[1]), p, 1)
+
 def p_type(p):
-    '''type : I8
-            | I16
-            | I32
-            | I64
-            | U8
-            | U16
-            | U32
-            | U64
-            | F32
-            | F64
-            | STR_TYPE
-            | INT_TYPE
-            | BOOL_TYPE
-            | CHAR_TYPE
-            | FLT_TYPE
-            | VOID
+    '''type : primitive_type
+            | IDENT
             | LBRACKET type RBRACKET
             | STR_TYPE LBRACKET INT RBRACKET
             | HMAP LBRACKET type COLON type RBRACKET'''
     if len(p) == 2:
-        p[0] = track_pos(Type_Node(type_name=p[1]), p, 1)
+        if isinstance(p[1], Type_Node):
+            p[0] = p[1]
+        else:
+            p[0] = track_pos(Type_Node(type_name=p[1]), p, 1)
     elif len(p) == 5 :
         p[0] = track_pos(Type_Node(type_name=p[1], size=p[3]), p, 1)
     elif len(p) == 7 :
@@ -165,7 +176,7 @@ def p_type(p):
 import re
 
 def _parse_interpolated_string(raw_str):
-    pattern = re.compile(r"\{([^}]+)\}")
+    pattern = re.compile(r"\{([^{}\n]+)\}")
     parts = []
     last_idx = 0
     has_expr = False
@@ -175,9 +186,18 @@ def _parse_interpolated_string(raw_str):
         if m.start() > last_idx:
             parts.append(Str_Node(value=raw_str[last_idx:m.start()]))
         expr_text = m.group(1).strip()
-        sub_ast = parser.parse(expr_text, lexer=sub_lexer)
-        if sub_ast and sub_ast.statements:
-            parts.append(sub_ast.statements[0])
+        try:
+            sub_ast = parser.parse(expr_text, lexer=sub_lexer)
+            if sub_ast and sub_ast.statements:
+                stmt = sub_ast.statements[0]
+                if type(stmt).__name__ in ('Annassign_Node', 'Assign_Node', 'Procedure_Node', 'Ifelse_Node', 'While_Node', 'For_Node', 'Return_Node', 'Const_Node', 'Break_Node', 'Continue_Node', 'Typedecl_Node', 'Sync_Node', 'Export_Node'):
+                    parts.append(Str_Node(value=m.group(0)))
+                else:
+                    parts.append(stmt)
+            else:
+                parts.append(Str_Node(value=m.group(0)))
+        except Exception:
+            parts.append(Str_Node(value=m.group(0)))
         last_idx = m.end()
     if last_idx < len(raw_str):
         parts.append(Str_Node(value=raw_str[last_idx:]))
@@ -229,7 +249,7 @@ def p_expr_ternary(p):
     p[0] = track_pos(Ternary_Node(cond=p[1], true_block=p[3], false_block=p[5]), p, 2)
 
 def p_expr_cast(p):
-    '''expression : LPAREN type RPAREN expression %prec CAST'''
+    '''expression : LPAREN primitive_type RPAREN expression %prec CAST'''
     p[0] = track_pos(Cast_Node(target_type=p[2], value=p[4]), p, 1)
 
 #-----------------------------------
@@ -472,8 +492,9 @@ def p_expr_index_access(p):
     p[0] = track_pos(Indexaccess_Node(array=p[1], index=p[3]), p, 1)
 
 def p_index_assign_stmt(p):
-    '''index_assign_stmt : IDENT LBRACKET expression RBRACKET ASSIGN expression'''
-    p[0] = track_pos(Indexassign_Node(ident=p[1], index=p[3], value=p[6]), p, 1)
+    '''index_assign_stmt : expression LBRACKET expression RBRACKET ASSIGN expression'''
+    ident = p[1].ident if hasattr(p[1], 'ident') else str(p[1])
+    p[0] = track_pos(Indexassign_Node(ident=ident, index=p[3], value=p[6]), p, 1)
 
 #-----------------------------------
 # MATCH AND CASE
@@ -528,9 +549,12 @@ def p_field(p):
 
 def p_fields(p):
     '''fields : field
-             | fields COMMA field'''
+             | fields COMMA field
+             | fields COMMA'''
     if len(p) == 2:
         p[0] = [p[1]]
+    elif len(p) == 3:
+        p[0] = p[1]
     else:
         p[0] = p[1] + [p[3]]
 
@@ -538,8 +562,23 @@ def p_typedef_decl_stmt(p):
     '''typedef_decl_stmt : TYPE_DEF IDENT LBRACE fields RBRACE'''
     p[0] = track_pos(Typedecl_Node(ident=p[2], field=p[4]), p, 2)
 
+def p_enum_variants(p):
+    '''enum_variants : IDENT
+                     | enum_variants COMMA IDENT
+                     | enum_variants COMMA'''
+    if len(p) == 2:
+        p[0] = [p[1]]
+    elif len(p) == 3:
+        p[0] = p[1]
+    else:
+        p[0] = p[1] + [p[3]]
+
+def p_enum_decl_stmt(p):
+    '''enum_decl_stmt : ENUM IDENT LBRACE enum_variants RBRACE'''
+    p[0] = track_pos(Enum_Node(ident=p[2], variants=p[4]), p, 1)
+
 def p_typeaccess_expr(p):
-    '''expression : IDENT DOT expression'''
+    '''expression : IDENT DOT expression %prec DOT'''
     p[0] = track_pos(Typeaccess_Node(ident=p[1], target=p[3]), p, 1)
 
 #-----------------------------------

@@ -2,18 +2,18 @@
 // Stkt Standard Library: Queue (queue.stkt)
 // ==========================================
 
-export proc queue_is_empty: bool(q: [i32]){
+export fn queue_is_empty: bool(q: [i32]){
     if len(q) == 0 {
         return true
     }
     return false
 }
 
-export proc queue_enqueue: void(q: [i32], val: i32){
+export fn queue_enqueue: void(q: [i32], val: i32){
     append(q, val)
 }
 
-export proc queue_front :i32(q: [i32]){
+export fn queue_front :i32(q: [i32]){
     if queue_is_empty(q) {
         return -1
     } else {
@@ -21,7 +21,7 @@ export proc queue_front :i32(q: [i32]){
     }
 }
 
-export proc queue_dequeue :i32(q: [i32]){
+export fn queue_dequeue :i32(q: [i32]){
     if queue_is_empty(q){
         return -1
     } else {

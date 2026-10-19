@@ -28,7 +28,7 @@ tokens = (
     'LET', 'CONST', 'ASSIGN', 'IDENT', 'PROCEDURE', 'WHILE', 'IF', 'ELSE', 'LAMBDA',
     'FOR', 'TERNARY', 'RETURN', 'BREAK', 'CONTINUE', 'ONSCREEN', 'SCAN', 'ONKEY',
     'CASE', 'MATCH', 'DEFAULT', 'LOOP', 'STEP', 'TYPE_DEF', 'APPEND', 'LEN', 'POP',
-    'SYNC', 'EXPORT', 'AS', 'ISOK_Q', 'OR_KEY', 'HMAP', 'IN'
+    'SYNC', 'EXPORT', 'AS', 'ISOK_Q', 'OR_KEY', 'HMAP', 'IN', 'ENUM'
 
 )
 
@@ -92,6 +92,7 @@ reserved_key = {
     'if' : 'IF',
     'else' : 'ELSE',
     'while' : 'WHILE',
+    'fn' : 'PROCEDURE',
     'proc' : 'PROCEDURE',
     'procedure' : 'PROCEDURE',
     'for' : 'FOR',
@@ -112,13 +113,15 @@ reserved_key = {
     'append' : 'APPEND',
     'len' : 'LEN',
     'pop' : 'POP',
+    'incl' : 'SYNC',
     'sync' : 'SYNC',
     'export' : 'EXPORT',
     'as' : 'AS',
-    'or' : 'OR_KEY',
     'or' : 'OR',
     'hmap' : 'HMAP',
     'in' : 'IN',
+    'enum' : 'ENUM',
+    'struct' : 'TYPE_DEF',
 
 }
 

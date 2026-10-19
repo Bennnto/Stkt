@@ -1,0 +1,17 @@
+incl "time"
+
+fn fib: i32(n: i32) {
+    if n <= 1 {
+        return n
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+let start: i64 = now_ms()
+let res: i32 = fib(40)
+let elapsed: i64 = now_ms() - start
+
+onscreen "Result:"
+onscreen res
+onscreen "Elapsed ms:"
+onscreen elapsed

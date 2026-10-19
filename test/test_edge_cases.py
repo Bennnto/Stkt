@@ -1,3 +1,5 @@
+from doctest import OutputChecker
+
 import pytest
 from parse import parser
 from lexicals import lexer
@@ -884,3 +886,14 @@ def test_automatic_scope_memory_cleanup(run_stkt):
     """
     output = run_stkt(code)
     assert "res=160, s_len=2" in output
+
+
+def test_interpolated_string_with_array_indexing(run_stkt):
+    code = """
+    let headers: [str] = ["#include <stdio.h>", "#include <stdlib.h>"]
+    let i: i32 = 0
+    let s: str = "{headers[i]}"
+    onscreen s
+    """
+    output = run_stkt(code)
+    assert "#include <stdio.h>" in output

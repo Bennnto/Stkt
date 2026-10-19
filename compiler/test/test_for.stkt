@@ -1,0 +1,43 @@
+// C-style for loop test
+
+// 1. Basic counting loop (no parens)
+let total: i32 = 0
+let i: i32 = 0
+for i = 0; i < 5; i = i + 1 {
+    total = total + 1
+}
+onscreen total
+
+// 2. Same loop with parentheses
+let total2: i32 = 0
+let j: i32 = 0
+for (j = 0; j < 5; j = j + 1) {
+    total2 = total2 + 1
+}
+onscreen total2
+
+// 3. Multi-expression condition (<=)
+let sum: i32 = 0
+let k: i32 = 0
+for k = 1; k <= 10; k = k + 1 {
+    sum = sum + k
+}
+onscreen sum
+
+// 4. Multiplication step
+let prod: i32 = 1
+let m: i32 = 1
+for m = 1; m < 6; m = m + 1 {
+    prod = prod * m
+}
+onscreen prod
+
+// 5. Counting down
+let down: i32 = 0
+let n: i32 = 10
+for n = 10; n > 0; n = n - 1 {
+    down = down + 1
+}
+onscreen down
+
+onscreen "for loop tests done"

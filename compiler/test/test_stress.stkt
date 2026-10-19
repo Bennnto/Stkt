@@ -1,0 +1,223 @@
+// ============================================================
+// STKT SELF-HOSTED COMPILER: MEGA STRESS TEST SUITE
+// Tests every supported feature combined in realistic scenarios:
+//   - Enums with match/case & if conditions
+//   - Multiple custom struct types with multi-typed fields
+//   - Struct instantiation, field reads, field mutations
+//   - While loops with break & continue
+//   - C-style for loops with complex arithmetic & step logic
+//   - Counted loops (loop N step S)
+//   - Fixed arrays with indexing & in-place mutations
+//   - Functions (procedures) taking & returning multiple types
+//   - Lambdas capturing logic & inline calls
+//   - Math module calls & floating-point computations
+//   - String methods & character literal handling
+//   - Ternary expressions & compound boolean conditions
+// ============================================================
+
+enum Status {
+    Pending,
+    Active,
+    Completed,
+    Failed,
+}
+
+enum Priority {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+type Vector2D {
+    x: f32,
+    y: f32,
+}
+
+type Task {
+    id: i32,
+    priority: i32,
+    status: i32,
+    progress: f32,
+    tag: char,
+}
+
+// 1. Procedures with arithmetic, logic, and loops
+fn compute_hypotenuse_sq: f32(dx: f32, dy: f32) {
+    return (dx * dx) + (dy * dy)
+}
+
+fn is_priority_high: bool(p: i32) {
+    if p == Priority.High || p == Priority.Critical {
+        return true
+    }
+    return false
+}
+
+fn collatz_steps: i32(start_val: i32) {
+    let n: i32 = start_val
+    let steps: i32 = 0
+    while n > 1 {
+        if n == 1 {
+            break
+        }
+        let is_even: bool = (n - ((n / 2) * 2)) == 0
+        if is_even {
+            n = n / 2
+        }
+        if !is_even {
+            n = (n * 3) + 1
+        }
+        steps = steps + 1
+        if steps > 100 {
+            break
+        }
+    }
+    return steps
+}
+
+onscreen "=== STARTING COMPILER STRESS TEST ==="
+
+// ------------------------------------------------------------
+// TEST 1: Enums & Pattern Matching
+// ------------------------------------------------------------
+onscreen "--- Test 1: Enums ---"
+let current_status: i32 = Status.Active
+onscreen current_status
+
+let priority_check: bool = is_priority_high(Priority.Critical)
+onscreen priority_check
+
+let low_check: bool = is_priority_high(Priority.Low)
+onscreen low_check
+
+// ------------------------------------------------------------
+// TEST 2: Structs, Field Reads & In-place Field Mutation
+// ------------------------------------------------------------
+onscreen "--- Test 2: Structs & Mutations ---"
+let t1: Task = Task(101, Priority.High, Status.Pending, 0.0, 'A')
+onscreen t1.id
+onscreen t1.priority
+onscreen t1.tag
+
+// Mutate fields
+t1.status = Status.Active
+t1.progress = 75.5
+t1.tag = 'Z'
+onscreen t1.status
+onscreen t1.progress
+onscreen t1.tag
+
+// Vector computations
+let v: Vector2D = Vector2D(3.0, 4.0)
+let hyp_sq: f32 = compute_hypotenuse_sq(v.x, v.y)
+onscreen hyp_sq
+
+// ------------------------------------------------------------
+// TEST 3: Complex Nested Loops & Control Flow (break/continue)
+// ------------------------------------------------------------
+onscreen "--- Test 3: Complex Loops ---"
+let matrix_sum: i32 = 0
+let r: i32 = 0
+let c: i32 = 0
+
+for r = 0; r < 5; r = r + 1 {
+    for c = 0; c < 5; c = c + 1 {
+        if r == c {
+            continue
+        }
+        matrix_sum = matrix_sum + (r * 10) + c
+    }
+}
+onscreen matrix_sum
+
+// While loop with Collatz computation
+let c_steps: i32 = collatz_steps(27)
+onscreen c_steps
+
+// Counted loop with step
+let loop_acc: i32 = 0
+loop 20 step 4 {
+    loop_acc = loop_acc + 1
+}
+onscreen loop_acc
+
+// ------------------------------------------------------------
+// TEST 4: Arrays with Mutations & Slices
+// ------------------------------------------------------------
+onscreen "--- Test 4: Array Buffers ---"
+let buffer[6]: i32 = [10, 20, 30, 40, 50, 60]
+onscreen buffer[0]
+onscreen buffer[5]
+
+let idx: i32 = 0
+for idx = 0; idx < 6; idx = idx + 1 {
+    buffer[idx] = buffer[idx] * 2
+}
+onscreen buffer[0]
+onscreen buffer[5]
+
+// Dynamic Slices
+let dyn_slice: [i32] = [100, 200]
+append(dyn_slice, 300)
+onscreen len(dyn_slice)
+onscreen dyn_slice[2]
+let popped: i32 = pop(dyn_slice)
+onscreen popped
+onscreen len(dyn_slice)
+
+// ------------------------------------------------------------
+// TEST 5: Lambdas & Higher-Order Transformations
+// ------------------------------------------------------------
+onscreen "--- Test 5: Lambdas ---"
+let compute_delta = L :f32(base: f32, factor: f32) {
+    let adjusted: f32 = base * factor
+    return adjusted + 1.25
+}
+
+let delta_res: f32 = compute_delta(10.0, 2.5)
+onscreen delta_res
+
+// ------------------------------------------------------------
+// TEST 6: Ternary & Compound Conditions
+// ------------------------------------------------------------
+onscreen "--- Test 6: Ternary & Logic ---"
+let a_val: i32 = 42
+let b_val: i32 = 100
+let max_val: i32 = a_val > b_val ? a_val : b_val
+onscreen max_val
+
+let logic_flag: bool = (a_val < 50 && b_val >= 100) || (a_val == 0)
+onscreen logic_flag
+
+// ------------------------------------------------------------
+// TEST 7: Module Calls & Standard Math Functions
+// ------------------------------------------------------------
+onscreen "--- Test 7: Math Module ---"
+let root: f32 = math.sqrt(81.0)
+onscreen root
+
+// ------------------------------------------------------------
+// TEST 8: Native HashMaps & Methods
+// ------------------------------------------------------------
+onscreen "--- Test 8: HashMaps ---"
+let inventory: hmap[str: i32] = {}
+inventory.set("cpu", 8)
+inventory.set("gpu", 2)
+inventory.set("ram", 64)
+
+let cpu_count: i32 = inventory.get("cpu")
+let has_gpu: bool = inventory.has("gpu")
+let ssd_fallback: i32 = inventory.get("ssd").or(4)
+onscreen cpu_count
+onscreen has_gpu
+onscreen ssd_fallback
+
+let part_total: i32 = 0
+for part in inventory.keys() {
+    let p_cnt: i32 = inventory.get(part)
+    part_total = part_total + p_cnt
+}
+onscreen part_total
+
+onscreen "=== ALL STRESS TESTS COMPLETED SUCCESSFULLY ==="

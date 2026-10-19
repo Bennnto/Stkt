@@ -1,0 +1,17 @@
+incl "compiler/test/math_helper.stkt"
+incl "compiler/test/math_helper.stkt" as m
+
+onscreen "=== TEST MULTI-FILE SYNC ==="
+let sq: i32 = square(7)
+onscreen sq
+
+let cb: i32 = cube(3)
+onscreen cb
+
+let m_sq: i32 = m.square(5)
+onscreen m_sq
+
+let m_cb: i32 = m.cube(4)
+onscreen m_cb
+
+onscreen "=== SYNC TEST PASSED ==="

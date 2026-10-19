@@ -1,0 +1,61 @@
+fn add: i32(a: i32, b: i32) {
+    return a + b
+}
+
+const LIMIT: i32 = 5
+let count: i32 = 0
+while count < 10 {
+    count = count + 1
+    if count == 2 {
+        continue
+    }
+    if count == LIMIT {
+        break
+    }
+}
+
+let x: i32 = 10
+let y: i32 = 20
+let sum: i32 = add(x, y)
+onscreen sum
+onscreen count
+
+let A[3]: i32 = [10, 20, 30]
+onscreen A[0]
+A[1] = 99
+onscreen A[1]
+onscreen A[2]
+
+let casted: i32 = (i32)123
+onscreen casted
+
+let input_val: i32 = onkey: i32
+onscreen input_val
+
+let code: i32 = 1
+match code {
+    case 1 {
+        onscreen "Match 1"
+    }
+    case 2 {
+        onscreen "Match 2"
+    }
+    default {
+        onscreen "Match default"
+    }
+}
+
+let not_val: bool = !false
+let neg_val: i32 = -42
+onscreen not_val
+onscreen neg_val
+
+let t_val: i32 = 10 > 5 ? 100 : 200
+onscreen t_val
+
+let mult = L :i32(x: i32) {
+    return x * 3
+}
+onscreen mult(10)
+
+onscreen "All statements passed!"

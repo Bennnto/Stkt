@@ -1,0 +1,545 @@
+// ==========================================
+// Stkt Self-Hosted Compiler: Codegen (codegen.stkt)
+// ==========================================
+
+incl "compiler/ast.stkt"
+incl "compiler/runtime.stkt"
+
+export fn to_c_type: str(stkt_t: str) {
+    if len(stkt_t) >= 3 && stkt_t[0] == '[' && stkt_t[len(stkt_t) - 1] == ']' {
+        let elem_t: str = stkt_t[1..(len(stkt_t) - 1)]
+        return "stkt_slice_{elem_t}"
+    }
+    if stkt_t == "i8" { return "int8_t" }
+    if stkt_t == "i16" { return "int16_t" }
+    if stkt_t == "i32" { return "int32_t" }
+    if stkt_t == "i64" { return "int64_t" }
+    if stkt_t == "u8" { return "uint8_t" }
+    if stkt_t == "u16" { return "uint16_t" }
+    if stkt_t == "u32" { return "uint32_t" }
+    if stkt_t == "u64" { return "uint64_t" }
+    if stkt_t == "f32" { return "float" }
+    if stkt_t == "f64" { return "double" }
+    if stkt_t == "bool" { return "bool" }
+    if stkt_t == "str" { return "char*" }
+    if stkt_t == "void" { return "void" }
+    return stkt_t
+}
+
+export fn detect_features: RuntimeFeatures(code: str) {
+    let f_strings: bool = code.contains("stkt_str_") || code.contains(".trim(") || code.contains(".split(") || code.contains(".contains(")
+    let f_hmap: bool = code.contains("__stkt_map_") || code.contains("hmap[")
+    let f_error: bool = code.contains("__stkt_") || code.contains("isok?") || code.contains(".or(") || f_hmap
+    let f_slices: bool = code.contains("stkt_slice_") || code.contains("STKT_SLICE_") || code.contains("append(") || code.contains("pop(") || code.contains("len(") || f_hmap || f_strings
+    let f_io: bool = code.contains("stkt_file_") || code.contains("file_exists") || code.contains("read_text") || code.contains("write_text") || code.contains("append_text") || code.contains("file_size")
+    let f_os: bool = code.contains("stkt_args_") || code.contains("stkt_get_args") || code.contains("stkt_get_env") || code.contains("arg_count") || code.contains("get_args")
+    let f_time: bool = code.contains("stkt_time_") || code.contains("time_now") || code.contains("time_sleep")
+
+    return RuntimeFeatures(f_slices, f_strings, f_hmap, f_io, f_os, f_error, f_time)
+}
+
+
+
+// Modular Statement Generator: let
+export fn gen_let: str(node: LetNode) {
+    let id: str = node.name
+    let val: str = node.val
+    let t: str = node.type_name
+
+    if len(val) >= 9 && val[0] == '_' && val[1] == '_' && val[2] == 'l' && val[3] == 'a' && val[4] == 'm' && val[5] == 'b' && val[6] == 'd' && val[7] == 'a' && val[8] == '_' {
+        return "    __auto_type {id} = {val};"
+    }
+
+    if len(t) >= 4 && t[0] == 's' && t[1] == 't' && t[2] == 'r' && t[3] == '[' {
+        return "    char {id}[] = {val};"
+    }
+    let c_t: str = to_c_type(t)
+    return "    {c_t} {id} = {val};"
+}
+
+// Modular Statement Generator: assign
+export fn gen_assign: str(node: AssignNode) {
+    let id: str = node.name
+    let val: str = node.val
+    return "    {id} = {val};"
+}
+
+// Modular Statement Generator: if
+export fn gen_if: str(node: IfNode) {
+    let cond: str = node.cond
+    let b: str = node.body
+    if len(node.else_body) > 0 {
+        let eb: str = node.else_body
+        return "    if ({cond}) {\n{b}    } else {\n{eb}    }"
+    }
+    return "    if ({cond}) {\n{b}    }"
+}
+
+// Modular Statement Generator: while
+export fn gen_while: str(node: WhileNode) {
+    let cond: str = node.cond
+    let b: str = node.body
+    return "    while ({cond}) {\n{b}    }"
+}
+
+// Modular Statement Generator: onscreen
+export fn gen_print: str(node: PrintNode) {
+    let val: str = node.val
+    let t: str = node.type_name
+
+    // Type-based dispatch: use inferred type from declaration when available
+    if t == "bool" {
+        return "    printf(\"%s\\n\", ({val}) ? \"true\" : \"false\");"
+    }
+    if t == "f32" || t == "f64" || t == "float" {
+        return "    printf(\"%f\\n\", {val});"
+    }
+    if t == "str" {
+        return "    printf(\"%s\\n\", {val});"
+    }
+    if t == "char" {
+        return "    printf(\"%c\\n\", {val});"
+    }
+
+    // Value-pattern fallback (for literals and inline expressions)
+
+    // String Literal
+    if len(val) >= 2 && val[0..1] == "\"" {
+        return "    printf(\"%s\\n\", {val});"
+    }
+
+    // Character literal
+    if len(val) >= 3 && val[0..1] == "'" {
+        return "    printf(\"%c\\n\", {val});"
+    }
+
+    // Boolean literal (true, false)
+    if val == "true" || val == "false" {
+        return "    printf(\"%s\\n\", ({val}) ? \"true\" : \"false\");"
+    }
+
+    // Unary NOT expression: (!expr) -> bool
+    if len(val) >= 2 && val[0..2] == "(!" {
+        return "    printf(\"%s\\n\", ({val}) ? \"true\" : \"false\");"
+    }
+
+    // Unary MINUS expression: (-expr) -> integer
+    if len(val) >= 2 && val[0..2] == "(-" {
+        return "    printf(\"%d\\n\", {val});"
+    }
+
+    // Float literal
+    if len(val) > 0 && val[0] >= '0' && val[0] <= '9' && val.contains(".") {
+        return "    printf(\"%f\\n\", {val});"
+    }
+
+    // Default: integers and unrecognised variables
+    return "    printf(\"%d\\n\", {val});"
+}
+
+// Modular Statement Generator: return
+export fn gen_return: str(node: ReturnNode) {
+    if len(node.val) > 0 {
+        return "    return {node.val};"
+    }
+    return "    return;"
+}
+
+// Modular Function Generator: proc
+export fn gen_proc: str(node: ProcNode) {
+    let c_ret: str = to_c_type(node.ret_type)
+    return "{c_ret} {node.name}({node.params}) {\n{node.body}}\n"
+}
+
+// Modular Break Generator : break
+export fn gen_break: str(node: BreakNode) {
+    return "    break;"
+}
+
+// Modular Continue Generator : continue
+export fn gen_continue: str(node: ContinueNode) {
+    return "    continue;"
+}
+
+// Modular Constant Generator : const
+export fn gen_const: str(node: ConstNode) {
+    let name: str = node.name
+    let type_name: str = node.type_name
+    let c_type: str = to_c_type(type_name)
+    let val: str = node.val
+    return "    const {c_type} {name} = {val};"
+}
+
+// Modular Call Generator: add(1, 2)
+export fn gen_call: str(node: CallNode) {
+    let name: str = node.name
+    let args: str = node.args
+    return "    {name}({args});"
+}
+
+// Modular Array Declaration Generator: let A[5]: i32 = [1, 2, 3, 4, 5]
+export fn gen_array_decl: str(node: ArrayDeclNode) {
+    let name: str = node.name
+    let size: str = node.size
+    let type_str: str = node.type_name
+    let c_type: str = to_c_type(type_str)
+    let elements: str = node.element
+    if len(elements) > 0 {
+        return "    {c_type} {name}[{size}] = {elements};"
+    }
+    return "    {c_type} {name}[{size}];"
+}
+
+// Modular Index Assign Generator: arr[i] = val
+export fn gen_index_assign: str(node: IndexAssignNode) {
+    let name: str = node.name
+    let index: str = node.index
+    let val: str = node.val
+    return "    {name}[{index}] = {val};"
+}
+
+// Modular Index Access Generator : arr[5]
+export fn gen_index_access: str(node: IndexAccessNode) {
+    let name: str = node.name
+    let index: str = node.index
+    return "{name}[{index}]"
+}
+
+// Modular Type Cast Generator: (i32)x
+export fn gen_cast: str(node: CastNode) {
+    let c_type: str = to_c_type(node.target_type)
+    return "(({c_type})({node.val}))"
+}
+
+export fn gen_interpolate: str(node: InterpolatedStrNode) {
+    let fmt: str = node.fmt_str
+    let args: str = node.arg_str
+    if len(args) > 0 {
+        return "stkt_format({fmt}, {args})"
+    }
+    return "stkt_format({fmt})"
+}
+
+export fn gen_for: str(node: ForNode) {
+    let init: str = node.init
+    let cond: str = node.cond
+    let iter: str = node.iter
+    let b: str = node.body
+    return "    for ({init}; {cond}; {iter}) {\n{b}    }"
+}
+
+export fn gen_loop: str(node: LoopNode) {
+    let times: str = node.times
+    let s: str = node.step_val
+    let b: str = node.body
+    return "    for (int32_t i = 0; i < {times}; i = i + {s}) {\n{b}    }"
+}
+
+// FIX 3: gen_for_in — loop variable is now declared with __auto_type
+// Previously: ident = collection[i]  (undeclared variable — C compile error)
+// Fixed:     __auto_type ident = collection[i]
+export fn gen_for_in: str(node: ForinNode) {
+    let ident: str = node.ident
+    let collection: str = node.collection
+    let b: str = node.body
+    if collection.contains("keys") {
+        return "    stkt_slice_str __iter_keys = {collection};\n    for (int32_t __idx = 0; __idx < STKT_SLICE_LEN(__iter_keys); __idx++) {\n        char* {ident} = __iter_keys.buf->data[__idx];\n{b}    }"
+    }
+    return "    for (int32_t i = 0; i < len({collection}); i = i + 1) {\n        __auto_type {ident} = {collection}[i];\n{b}    }"
+}
+
+export fn gen_ternary: str(node: TernaryNode) {
+    let cond: str = node.cond
+    let true_str: str = node.true_block
+    let false_str: str = node.false_block
+    return "(({cond}) ? ({true_str}) : ({false_str}))"
+}
+
+export fn gen_unary: str(node: UnaryNode) {
+    let operand: str = node.operand
+    let ops: str = node.ops
+    return "({ops}{operand})"
+}
+
+export fn gen_lambda: str(node: LambdaNode) {
+    let id: str = node.id
+    let return_type: str = to_c_type(node.ret_type)
+    let params_str: str = node.params
+    let b: str = node.body
+    return "static {return_type} __lambda_{id}({params_str}) {\n{b}}\n"
+}
+
+export fn gen_case: str(node: CaseNode) {
+    let b: str = node.body
+    if node.is_default {
+        return "        default: {\n{b}            break;\n        }\n"
+    }
+    let t: str = node.target
+    return "        case {t}: {\n{b}            break;\n        }\n"
+}
+
+export fn gen_match: str(node: MatchNode) {
+    let cond: str = node.cond
+    let cases_code: str = node.cases_code
+    return "    switch ({cond}) {\n{cases_code}    }"
+}
+
+export fn gen_field: str(node: FieldNode) {
+    let type_str: str = node.type_name
+    let ident: str = node.ident
+    return "       {type_str} {ident};"
+}
+
+export fn is_struct_name: bool(src: str, name: str) {
+    if is_primitive_type(name) {
+        return false
+    }
+    if name == "TokenKind" {
+        return false
+    }
+    if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' {
+        return true
+    }
+    let query: str = "type {name}"
+    return src.contains(query)
+}
+
+export fn is_enum_name: bool(src: str, name: str) {
+    if name == "TokenKind" {
+        return true
+    }
+    let query: str = "enum {name}"
+    if src.contains(query) {
+        return true
+    }
+    if len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z' && !is_struct_name(src, name) {
+        return true
+    }
+    return false
+}
+
+export fn is_module_name: bool(src: str, name: str) {
+    if name == "math" || name == "io" || name == "time" || name == "os" || name == "json" || name == "string" || name == "collections" || name == "algo" || name == "set" {
+        return true
+    }
+    let query1: str = "incl \"{name}\""
+    let query2: str = "incl \"{name}.stkt\""
+    let query1_old: str = "sync \"{name}\""
+    let query2_old: str = "sync \"{name}.stkt\""
+    let query3: str = " as {name} "
+    let query4: str = " as {name}\n"
+    let query5: str = "/{name}.stkt\""
+    if src.contains(query1) || src.contains(query2) || src.contains(query1_old) || src.contains(query2_old) || src.contains(query3) || src.contains(query4) || src.contains(query5) {
+        return true
+    }
+    return false
+}
+
+export fn gen_typeaccess: str(src: str, node: TypeAccessNode) {
+    let target: str = node.target
+    let member: str =  node.fields
+    if is_enum_name(src, target) || is_module_name(src, target) {
+        return "{target}_{member}"
+    }
+    return "{target}.{member}"
+}
+
+export fn gen_enum: str(node: EnumNode) {
+    let ident: str = node.ident
+    let variants : str = node.variants
+    return "typedef enum {\n{variants}} {ident};\n"
+}
+
+export fn gen_enumaccess: str(node: EnumAccessNode) {
+    let ident: str = node.ident
+    let variant: str = node.variant
+    return "{ident}_{variant}"
+}
+
+export fn gen_typedecl: str(node: TypeDeclNode) {
+    let ident: str = node.ident
+    let fields: str = node.fields
+    return "typedef struct {\n{fields}} {ident};"
+}
+
+export fn gen_scan: str(node: ScanNode) {
+    if node.type_name == "str" {
+        return "stkt_scan_str()"
+    }
+    if node.type_name == "i32" || node.type_name == "i16" || node.type_name == "i8" {
+        return "stkt_scan_i32()"
+    }
+    if node.type_name == "f32" || node.type_name == "f64" || node.type_name == "float" {
+        return "stkt_scan_f64()"
+    }
+    if node.type_name == "u8" || node.type_name == "u16" || node.type_name == "u32" || node.type_name == "u64" {
+        return "stkt_scan_u64()"
+    }
+    if node.type_name == "bool" {
+        return "stkt_scan_bool()"
+    }
+    if node.type_name == "char" {
+        return "stkt_scan_char()"
+    }
+    return "stkt_scan_i32()"
+}
+
+
+export fn is_slice_var: bool(src: str, name: str) {
+    let q1: str = "let {name}: ["
+    let q2: str = "let {name} : ["
+    let q3: str = "({name}: ["
+    let q4: str = " {name}: ["
+    let q5: str = ", {name}: ["
+    return src.contains(q1) || src.contains(q2) || src.contains(q3) || src.contains(q4) || src.contains(q5)
+}
+
+
+export fn is_hmap_var: bool(src: str, name: str) {
+    let q1: str = "let {name}: hmap"
+    let q2: str = "{name}: hmap"
+    return src.contains(q1) || src.contains(q2)
+}
+
+export fn is_hmap_str_str: bool(src: str, name: str) {
+    let q1: str = "let {name}: hmap[str: str]"
+    let q2: str = "let {name}: hmap[str, str]"
+    let q3: str = "{name}: hmap[str: str]"
+    return src.contains(q1) || src.contains(q2) || src.contains(q3)
+}
+
+export fn to_slice_c_type: str(elem_t: str) {
+    if elem_t == "i32" { return "stkt_slice_i32" }
+    if elem_t == "i64" { return "stkt_slice_i64" }
+    if elem_t == "f32" || elem_t == "float" { return "stkt_slice_f32" }
+    if elem_t == "f64" || elem_t == "double" { return "stkt_slice_f64" }
+    if elem_t == "str" { return "stkt_slice_str" }
+    return "stkt_slice_i32"
+}
+
+export fn gen_slice_decl: str(node: SliceDeclNode) {
+    let name: str = node.name
+    let elem_t: str = node.elem_type
+    let sl_type: str = to_slice_c_type(elem_t)
+    let elems: str = node.elements
+
+    let out: str = "    {sl_type} {name};\n    STKT_SLICE_INIT({name});\n"
+    let n: i32 = len(elems)
+    if n == 0 {
+        return out
+    }
+    let p: i32 = 0
+    while p < n {
+        while p < n && (elems[p] == ' ' || elems[p] == ',' || elems[p] == '{' || elems[p] == '}') {
+            p = p + 1
+        }
+        if p >= n {
+            break
+        }
+        let e_start: i32 = p
+        while p < n && elems[p] != ',' && elems[p] != '}' && elems[p] != ' ' {
+            p = p + 1
+        }
+        let e_val: str = elems[e_start..p]
+        if len(e_val) > 0 {
+            out = "{out}    STKT_SLICE_APPEND({name}, {e_val});\n"
+        }
+    }
+    return out
+}
+
+export fn gen_append: str(node: AppendNode) {
+    let arr: str = node.arr
+    let val: str = node.val
+    return "    STKT_SLICE_APPEND({arr}, {val});"
+}
+
+export fn gen_index_assign_slice: str(src: str, node: IndexAssignNode) {
+    let name: str = node.name
+    let index: str = node.index
+    let val: str = node.val
+    if is_slice_var(src, name) {
+        return "    {name}.buf->data[{index}] = {val};"
+    }
+    return "    {name}[{index}] = {val};"
+}
+
+// Safety Assertion: expr.isok?(msg)
+export fn gen_isok: str(node: IsOkNode) {
+    let expr_val: str = node.expr
+    let msg_val: str = node.msg
+    let c_t: str = "__auto_type"
+    if len(node.type_name) > 0 {
+        c_t = to_c_type(node.type_name)
+    }
+    return "({ {c_t} __v = {expr_val}; if (__stkt_has_error) { fprintf(stderr, \"[Error]: %s\\n\", {msg_val}); exit(1); } __v; })"
+}
+
+// Fallback Operator: expr.or(fallback)
+export fn gen_or: str(node: OrNode) {
+    let expr_val: str = node.expr
+    let fallback_val: str = node.fallback
+    let c_t: str = "__auto_type"
+    if len(node.type_name) > 0 {
+        c_t = to_c_type(node.type_name)
+    }
+    return "({ {c_t} __v = {expr_val}; if (__stkt_has_error) { __stkt_clear_err(); __v = {fallback_val}; } __v; })"
+}
+
+export fn gen_headers: str() {
+    return get_runtime_headers()
+}
+
+export fn gen_runtime: str(features: RuntimeFeatures) {
+    let rt: str = get_runtime_core()
+    if features.needs_error {
+        let code_error: str = get_runtime_error()
+        rt = "{rt}{code_error}\n"
+    }
+    if features.needs_slices {
+        let code_slices: str = get_runtime_slices()
+        rt = "{rt}{code_slices}\n"
+    }
+    if features.needs_strings {
+        let code_strings: str = get_runtime_strings()
+        rt = "{rt}{code_strings}\n"
+    }
+    if features.needs_hmap {
+        let code_hmap: str = get_runtime_hmap()
+        rt = "{rt}{code_hmap}\n"
+    }
+    if features.needs_io {
+        let code_io: str = get_runtime_io()
+        rt = "{rt}{code_io}\n"
+    }
+    if features.needs_os {
+        let code_os: str = get_runtime_os()
+        rt = "{rt}{code_os}\n"
+    }
+    if features.needs_time {
+        let code_time: str = get_runtime_time()
+        rt = "{rt}{code_time}\n"
+    }
+    return rt
+}
+
+export fn gen_aliased_proc: str(node: ProcNode, alias: str) {
+    let c_ret: str = to_c_type(node.ret_type)
+    let final_name: str = node.name
+    if len(alias) > 0 {
+        final_name = "{alias}_{node.name}"
+    }
+    return "{c_ret} {final_name}({node.params}) {\n{node.body}}\n"
+}
+
+
+// Modular Program Wrapper
+export fn gen_program: str(procs: str, main_body: str) {
+    let header: str = gen_headers()
+    let full_src: str = "{procs}\n{main_body}"
+    let features: RuntimeFeatures = detect_features(full_src)
+    let runtime: str = gen_runtime(features)
+    let main_wrapper: str = "int main(int argc, char** argv) {\n    __stkt_argc = argc;\n    __stkt_argv = argv;\n" + main_body + "    return 0;\n}\n"
+    let full: str = header + runtime + procs + main_wrapper
+    return full
+}

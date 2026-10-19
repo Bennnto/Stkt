@@ -276,3 +276,13 @@ class Forin_Node(Node):
     ident : str
     iter : Node
     body : Node
+
+@dataclass
+class Enum_Node(Node):
+    ident : str
+    variants: List[str]
+
+@dataclass
+class Enumaccess_Node(Node):
+    ident : str
+    variant : str

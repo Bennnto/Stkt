@@ -1,0 +1,2112 @@
+// ==========================================
+// Stkt Self-Hosted Compiler: Parser (parse.stkt)
+// ==========================================
+
+incl "compiler/token.stkt"
+incl "compiler/ast.stkt"
+incl "compiler/lexer.stkt"
+incl "compiler/codegen.stkt"
+
+type ParseResult {
+    text: str,
+    next_pos: i32
+}
+
+export fn is_already_sync: bool(synced: [str], file: str) {
+    let n: i32 = len(synced)
+    let i: i32 = 0
+    while i < n {
+        if synced[i] == file {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+export fn clean_module_path : str(raw: str) {
+    let s: str = raw
+    if len(s) >= 2 && s[0] == '"' {
+        let last_idx: i32 = len(s) - 1
+        s = s[1..last_idx]
+    }
+    if !s.contains(".stkt") {
+        if s == "string" || s == "collections" || s == "algo" || s == "set" || s == "time" || s == "json" || s == "queue" || s == "stackt" || s == "io" || s == "os" || s == "math" || s == "memory" || s == "arena" {
+            return "src/stdlib/{s}.stkt"
+        }
+        return "{s}.stkt"
+     }
+     return s
+}
+
+// Scans src for "let <name>: <type>" or "const <name>: <type>" and returns the type.
+export fn find_var_type: str(src: str, name: str) {
+    if len(name) == 0 {
+        return ""
+    }
+    let n: i32 = len(src)
+    let vn: i32 = len(name)
+
+    if name.contains("__stkt_map_get_str_i32") {
+        return "i32"
+    }
+    if name.contains("__stkt_map_get_str_str") {
+        return "str"
+    }
+    if name.contains("__stkt_map_has") {
+        return "bool"
+    }
+    if len(name) >= 4 && name[0..4] == "len(" {
+        return "i32"
+    }
+    if len(name) >= 14 && name[0..14] == "STKT_SLICE_LEN" {
+        return "i32"
+    }
+    if len(name) >= 14 && name[0..14] == "STKT_SLICE_POP" {
+        return "i32"
+    }
+    if name.contains(".buf->data") {
+        return "i32"
+    }
+
+    // Check for dot access: e.g. t1.progress, t1.tag, v.x
+    let dot_pos: i32 = -1
+    let k: i32 = 0
+    while k < vn {
+        if name[k] == '.' {
+            dot_pos = k
+        }
+        k = k + 1
+    }
+    if dot_pos >= 0 && dot_pos + 1 < vn {
+        let field_name: str = name[dot_pos + 1..vn]
+        let f_query: str = "{field_name}:"
+        let f_qlen: i32 = len(f_query)
+        let fi: i32 = 0
+        while fi <= n - f_qlen {
+            if src[fi..fi + f_qlen] == f_query {
+                let f_start: i32 = fi + f_qlen
+                while f_start < n && (src[f_start] == ' ' || src[f_start] == '\t') {
+                    f_start = f_start + 1
+                }
+                let f_end: i32 = f_start
+                while f_end < n && src[f_end] != ' ' && src[f_end] != '\n' && src[f_end] != ',' && src[f_end] != '}' {
+                    f_end = f_end + 1
+                }
+                return src[f_start..f_end]
+            }
+            fi = fi + 1
+        }
+    }
+
+    let i: i32 = 0
+    while i < n {
+        let is_let: bool = false
+        let is_const: bool = false
+        let is_param: bool = false
+        let kw_end: i32 = 0
+        if i + 4 <= n && src[i..i+4] == "let " {
+            is_let = true
+            kw_end = i + 4
+        }
+        if i + 6 <= n && src[i..i+6] == "const " {
+            is_const = true
+            kw_end = i + 6
+        }
+        if src[i] == '(' || src[i] == ',' {
+            let p_start: i32 = i + 1
+            while p_start < n && (src[p_start] == ' ' || src[p_start] == '\t') {
+                p_start = p_start + 1
+            }
+            kw_end = p_start
+            is_param = true
+        }
+        if is_let || is_const || is_param {
+            let name_start: i32 = kw_end
+            if name_start + vn <= n {
+                let candidate: str = src[name_start..name_start + vn]
+                if candidate == name {
+                    let after_name: i32 = name_start + vn
+                    if after_name < n && src[after_name..after_name + 1] == ":" {
+                        let type_start: i32 = after_name + 1
+                        while type_start < n && src[type_start] == ' ' {
+                            type_start = type_start + 1
+                        }
+                        let type_end: i32 = type_start
+                        while type_end < n && src[type_end] != ' ' && src[type_end] != '\n' && src[type_end] != '=' && src[type_end] != '[' && src[type_end] != ')' && src[type_end] != ',' {
+                            type_end = type_end + 1
+                        }
+                        return src[type_start..type_end]
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+// Sync Expression :
+export fn parse_sync: SyncNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_sync: Token = next_token(src, p)
+    p = tok_sync.next_pos
+
+    let tok_path: Token = next_token(src, p)
+    p = tok_path.next_pos
+
+    let clean_path: str = clean_module_path(tok_path.text)
+    let alias: str = ""
+
+    let tok_peek: Token = next_token(src, p)
+    if tok_peek.kind == TokenKind.TokAs || tok_peek.text == "as" {
+        p = tok_peek.next_pos
+        let tok_alias: Token = next_token(src, p)
+        alias = tok_alias.text
+        p = tok_alias.next_pos
+    }
+    return SyncNode(clean_path, alias, p)
+}
+
+// Grouped Expression: (expr)
+export fn parse_grouped_expr: ParseResult(src: str, start: i32) {
+    let p: i32 = start
+    let depth: i32 = 1
+    let expr_str: str = ""
+    let has_expr: bool = false
+    while true {
+        let tok: Token = next_token(src, p)
+        if tok.kind == TokenKind.TokEof {
+            break
+        }
+        if tok.kind == TokenKind.TokLParen {
+            depth = depth + 1
+            if has_expr {
+                expr_str = "{expr_str} ("
+            }
+            if !has_expr {
+                expr_str = "("
+                has_expr = true
+            }
+            p = tok.next_pos
+        }
+        if tok.kind == TokenKind.TokRParen {
+            depth = depth - 1
+            if depth == 0 {
+                p = tok.next_pos
+                break
+            }
+            if has_expr {
+                expr_str = "{expr_str} )"
+            }
+            if !has_expr {
+                expr_str = ")"
+                has_expr = true
+            }
+            p = tok.next_pos
+        }
+        if tok.kind != TokenKind.TokLParen && tok.kind != TokenKind.TokRParen {
+            p = tok.next_pos
+            let t_text: str = tok.text
+
+            if tok.kind == TokenKind.TokIdent {
+                let peek_dot: Token = next_token(src, p)
+                if peek_dot.kind == TokenKind.TokDot {
+                    p = peek_dot.next_pos
+                    let m_tok: Token = next_token(src, p)
+                    p = m_tok.next_pos
+                    if is_enum_name(src, t_text) {
+                        t_text = "{t_text}_{m_tok.text}"
+                    }
+                    if is_module_name(src, t_text) {
+                        t_text = "{t_text}_{m_tok.text}"
+                    }
+                    if !is_enum_name(src, t_text) && !is_module_name(src, t_text) {
+                        t_text = "{t_text}.{m_tok.text}"
+                    }
+                }
+            }
+
+            if has_expr {
+                expr_str = "{expr_str} {t_text}"
+            }
+            if !has_expr {
+                expr_str = t_text
+                has_expr = true
+            }
+        }
+    }
+    return ParseResult("({expr_str})", p)
+}
+
+export fn is_valid_interp_var: bool(var_expr: str) {
+    let vn: i32 = len(var_expr)
+    if vn == 0 {
+        return false
+    }
+    let k: i32 = 0
+    while k < vn {
+        let ch: char = var_expr[k]
+        if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '.') {
+            return false
+        }
+        k = k + 1
+    }
+    return true
+}
+
+export fn parse_interpolated_str: ParseResult(s_val: str, next_p: i32) {
+    if !s_val.contains("{") {
+        return ParseResult(s_val, next_p)
+    }
+    let n: i32 = len(s_val)
+    let fmt_str: str = ""
+    let arg_str: str = ""
+    let has_arg: bool = false
+    let i: i32 = 0
+    while i < n {
+        if s_val[i] == '{' {
+            let j: i32 = i + 1
+            while j < n && s_val[j] != '}' {
+                j = j + 1
+            }
+            if j < n && s_val[j] == '}' {
+                let var_expr: str = s_val[(i + 1)..j]
+                if is_valid_interp_var(var_expr) {
+                    fmt_str = "{fmt_str}%s"
+                    if has_arg {
+                        arg_str = "{arg_str}, {var_expr}"
+                    }
+                    if !has_arg {
+                        arg_str = var_expr
+                        has_arg = true
+                    }
+                    i = j + 1
+                }
+                if !is_valid_interp_var(var_expr) {
+                    fmt_str = "{fmt_str}{"
+                    i = i + 1
+                }
+            }
+            if j >= n || s_val[j] != '}' {
+                fmt_str = "{fmt_str}{"
+                i = i + 1
+            }
+        }
+        if i < n && s_val[i] != '{' {
+            if s_val[i] == '%' {
+                fmt_str = "{fmt_str}%%"
+                i = i + 1
+            }
+            if i < n && s_val[i] != '{' && s_val[i] != '%' {
+                let ch_str: str = s_val[i..(i + 1)]
+                fmt_str = "{fmt_str}{ch_str}"
+                i = i + 1
+            }
+        }
+    }
+    if !has_arg {
+        return ParseResult(s_val, next_p)
+    }
+    let node: InterpolatedStrNode = InterpolatedStrNode(fmt_str, arg_str, next_p)
+    return ParseResult(gen_interpolate(node), next_p)
+}
+
+export fn parse_idx_atom: ParseResult(src: str, start: i32) {
+    let tok: Token = next_token(src, start)
+    if tok.kind == TokenKind.TokLParen {
+        let inside: ParseResult = parse_ternary(src, tok.next_pos)
+        let close_lp: Token = next_token(src, inside.next_pos)
+        return ParseResult("({inside.text})", close_lp.next_pos)
+    }
+    if tok.kind == TokenKind.TokLen || (tok.kind == TokenKind.TokIdent && tok.text == "len") {
+        let p_len: i32 = tok.next_pos
+        let tok_lp: Token = next_token(src, p_len)
+        let arg_tok: Token = next_token(src, tok_lp.next_pos)
+        let rp_tok: Token = next_token(src, arg_tok.next_pos)
+        if is_slice_var(src, arg_tok.text) {
+            return ParseResult("STKT_SLICE_LEN({arg_tok.text})", rp_tok.next_pos)
+        }
+        return ParseResult("((int32_t)strlen({arg_tok.text}))", rp_tok.next_pos)
+    }
+    if tok.kind == TokenKind.TokInt {
+        return ParseResult(tok.text, tok.next_pos)
+    }
+    if tok.kind == TokenKind.TokIdent {
+        let p_id: i32 = tok.next_pos
+        let tok_next: Token = next_token(src, p_id)
+        let id_text: str = tok.text
+        let is_range_dot: bool = false
+        if tok_next.kind == TokenKind.TokDot {
+            let peek_dot2: Token = next_token(src, tok_next.next_pos)
+            if peek_dot2.kind == TokenKind.TokDot {
+                is_range_dot = true
+            }
+        }
+        while tok_next.kind == TokenKind.TokDot && !is_range_dot {
+            let field_tok: Token = next_token(src, tok_next.next_pos)
+            id_text = "{id_text}.{field_tok.text}"
+            p_id = field_tok.next_pos
+            tok_next = next_token(src, p_id)
+            if tok_next.kind == TokenKind.TokDot {
+                let peek_dot3: Token = next_token(src, tok_next.next_pos)
+                if peek_dot3.kind == TokenKind.TokDot {
+                    is_range_dot = true
+                }
+            }
+        }
+        return ParseResult(id_text, p_id)
+    }
+    return ParseResult(tok.text, tok.next_pos)
+}
+
+export fn parse_idx_expr: ParseResult(src: str, start: i32) {
+    let res: ParseResult = parse_idx_atom(src, start)
+    while true {
+        let op_tok: Token = next_token(src, res.next_pos)
+        if op_tok.kind != TokenKind.TokPlus && op_tok.kind != TokenKind.TokMinus {
+            return res
+        }
+        let rhs: ParseResult = parse_idx_atom(src, op_tok.next_pos)
+        let combined: str = "{res.text} {op_tok.text} {rhs.text}"
+        res = ParseResult(combined, rhs.next_pos)
+    }
+    return res
+}
+
+// Primary Expressions (atoms, identifiers, array literals, casts, and function calls)
+export fn parse_primary: ParseResult(src: str, start: i32) {
+    let p: i32 = start
+    let tok_primary: Token = next_token(src, p)
+
+    if tok_primary.kind == TokenKind.TokPop || (tok_primary.kind == TokenKind.TokIdent && tok_primary.text == "pop") {
+        p = tok_primary.next_pos
+        let tok_lp_pop: Token = next_token(src, p)
+        p = tok_lp_pop.next_pos
+
+        let tok_arr_pop: Token = next_token(src, p)
+        p = tok_arr_pop.next_pos
+
+        let tok_rp_pop: Token = next_token(src, p)
+        p = tok_rp_pop.next_pos
+
+        return ParseResult("STKT_SLICE_POP({tok_arr_pop.text})", p)
+    }
+
+    if tok_primary.kind == TokenKind.TokLen || (tok_primary.kind == TokenKind.TokIdent && tok_primary.text == "len") {
+        p = tok_primary.next_pos
+        let tok_lp_len: Token = next_token(src, p)
+        p = tok_lp_len.next_pos
+
+        let len_arg_res: ParseResult = parse_primary(src, p)
+        p = len_arg_res.next_pos
+
+        let tok_rp_len: Token = next_token(src, p)
+        p = tok_rp_len.next_pos
+
+        if is_slice_var(src, len_arg_res.text) {
+            return ParseResult("STKT_SLICE_LEN({len_arg_res.text})", p)
+        }
+        return ParseResult("((int32_t)strlen({len_arg_res.text}))", p)
+    }
+
+    if tok_primary.kind == TokenKind.TokStr {
+        return parse_interpolated_str(tok_primary.text, tok_primary.next_pos)
+    }
+
+    if tok_primary.kind == TokenKind.TokInt
+        || tok_primary.kind == TokenKind.TokFloat
+        || tok_primary.kind == TokenKind.TokChar
+        || tok_primary.kind == TokenKind.TokTrue
+        || tok_primary.kind == TokenKind.TokFalse {
+        return ParseResult(tok_primary.text, tok_primary.next_pos)
+    }
+
+    // Unary Expression: !x, -x
+    if tok_primary.kind == TokenKind.TokNot || tok_primary.kind == TokenKind.TokMinus {
+        let u_ops_str: str = tok_primary.text
+        p = tok_primary.next_pos
+        let u_operand: ParseResult = parse_primary(src, p)
+        p = u_operand.next_pos
+        let node_unary: UnaryNode = UnaryNode(u_operand.text, u_ops_str, p)
+        return ParseResult(gen_unary(node_unary), p)
+    }
+
+
+    // Lambda Expression: L :ret_type(params) { body }
+    if tok_primary.kind == TokenKind.TokLambda {
+        p = tok_primary.next_pos
+        let tok_colon1: Token = next_token(src, p)
+        p = tok_colon1.next_pos
+
+        let ret_type: Token = next_token(src, p)
+        p = ret_type.next_pos
+
+        let tok_lp: Token = next_token(src, p)
+        p = tok_lp.next_pos
+
+        while true {
+            let tok_peek_lp: Token = next_token(src, p)
+            if tok_peek_lp.kind == TokenKind.TokRParen || tok_peek_lp.kind == TokenKind.TokEof {
+                p = tok_peek_lp.next_pos
+                break
+            }
+            p = tok_peek_lp.next_pos
+        }
+
+        let tok_lbrace_lambda: Token = next_token(src, p)
+        p = tok_lbrace_lambda.next_pos
+
+        while true {
+            let lambda_peek: Token = next_token(src, p)
+            if lambda_peek.kind == TokenKind.TokRBrace || lambda_peek.kind == TokenKind.TokEof {
+                p = lambda_peek.next_pos
+                break
+            }
+            p = lambda_peek.next_pos
+        }
+        return ParseResult("__lambda_0", p)
+    }
+    // Array literal: [1, 2, 3] -> {1, 2, 3}
+    if tok_primary.kind == TokenKind.TokLBracket {
+        p = tok_primary.next_pos
+        let elems_str: str = ""
+        let has_elem: bool = false
+        let tok_first_elem: Token = next_token(src, p)
+        if tok_first_elem.kind != TokenKind.TokRBracket {
+            while true {
+                let elem_res: ParseResult = parse_primary(src, p)
+                p = elem_res.next_pos
+
+                if has_elem {
+                    elems_str = "{elems_str}, {elem_res.text}"
+                }
+                if !has_elem {
+                    elems_str = elem_res.text
+                    has_elem = true
+                }
+
+                let sep_elem: Token = next_token(src, p)
+                p = sep_elem.next_pos
+                if sep_elem.kind == TokenKind.TokRBracket {
+                    break
+                }
+            }
+        }
+        if tok_first_elem.kind == TokenKind.TokRBracket {
+            p = tok_first_elem.next_pos
+        }
+        let lit_str: str = "{{elems_str}}"
+        return ParseResult(lit_str, p)
+    }
+
+    // Type Cast: (i32)x or Grouped expression: (expr)
+    if tok_primary.kind == TokenKind.TokLParen {
+        p = tok_primary.next_pos
+        let tok_inside: Token = next_token(src, p)
+        let tok_after: Token = next_token(src, tok_inside.next_pos)
+
+        if is_primitive_type(tok_inside.text) && tok_after.kind == TokenKind.TokRParen {
+            p = tok_after.next_pos
+            let cast_val: ParseResult = parse_primary(src, p)
+            let node_cast: CastNode = CastNode(tok_inside.text, cast_val.text, cast_val.next_pos)
+            return ParseResult(gen_cast(node_cast), cast_val.next_pos)
+        }
+
+        let grp_res: ParseResult = parse_ternary(src, p)
+        let grp_text: str = "({grp_res.text})"
+        let tok_close_grp: Token = next_token(src, grp_res.next_pos)
+        let grp_p: i32 = tok_close_grp.next_pos
+        while true {
+            let peek_grp_err: Token = next_token(src, grp_p)
+            if peek_grp_err.kind == TokenKind.TokDot {
+                let tok_grp_mem: Token = next_token(src, peek_grp_err.next_pos)
+                if tok_grp_mem.kind == TokenKind.TokIsok || tok_grp_mem.text == "isok?" {
+                    let tok_grp_isok_lp: Token = next_token(src, tok_grp_mem.next_pos)
+                    let msg_grp_res: ParseResult = parse_primary(src, tok_grp_isok_lp.next_pos)
+                    let tok_grp_isok_rp: Token = next_token(src, msg_grp_res.next_pos)
+                    let isok_grp_node: IsOkNode = IsOkNode(grp_text, msg_grp_res.text, "", 0)
+                    grp_text = gen_isok(isok_grp_node)
+                    grp_p = tok_grp_isok_rp.next_pos
+                    continue
+                }
+                if tok_grp_mem.text == "or" {
+                    let tok_grp_or_lp: Token = next_token(src, tok_grp_mem.next_pos)
+                    let fb_grp_res: ParseResult = parse_primary(src, tok_grp_or_lp.next_pos)
+                    let tok_grp_or_rp: Token = next_token(src, fb_grp_res.next_pos)
+                    let or_grp_node: OrNode = OrNode(grp_text, fb_grp_res.text, "", 0)
+                    grp_text = gen_or(or_grp_node)
+                    grp_p = tok_grp_or_rp.next_pos
+                    continue
+                }
+            }
+            break
+        }
+        return ParseResult(grp_text, grp_p)
+    }
+
+    // Onkey : onkey: <type>
+    if tok_primary.kind == TokenKind.TokOnkey {
+        p = tok_primary.next_pos
+        let tok_scan: Token = next_token(src, p)
+        p = tok_scan.next_pos
+        let tok_type: Token = next_token(src, p)
+        p = tok_type.next_pos
+        let node_scan: ScanNode = ScanNode(tok_type.text, p)
+        return ParseResult(gen_scan(node_scan), p)
+    }
+
+    if tok_primary.kind == TokenKind.TokIdent {
+        p = tok_primary.next_pos
+        let tok_peek: Token = next_token(src, p)
+        let res_text: str = ""
+
+        // Function call: func(...) or Type(...) struct constructor
+        if tok_peek.kind == TokenKind.TokLParen {
+            p = tok_peek.next_pos
+            let args_str: str = ""
+            let has_arg: bool = false
+            let tok_arg_first: Token = next_token(src, p)
+            if tok_arg_first.kind != TokenKind.TokRParen {
+                while true {
+                    let arg_res: ParseResult = parse_ternary(src, p)
+                    p = arg_res.next_pos
+
+                    if has_arg {
+                        args_str = "{args_str}, {arg_res.text}"
+                    }
+                    if !has_arg {
+                        args_str = arg_res.text
+                        has_arg = true
+                    }
+
+                    let sep_arg: Token = next_token(src, p)
+                    p = sep_arg.next_pos
+                    if sep_arg.kind == TokenKind.TokRParen {
+                        break
+                    }
+                }
+            }
+            if tok_arg_first.kind == TokenKind.TokRParen {
+                p = tok_arg_first.next_pos
+            }
+            if is_struct_name(src, tok_primary.text) {
+                let l_b: str = "{"
+                let r_b: str = "}"
+                res_text = "({tok_primary.text}){l_b}{args_str}{r_b}"
+            }
+            if !is_struct_name(src, tok_primary.text) {
+                res_text = "{tok_primary.text}({args_str})"
+            }
+        }
+
+        // Index access: arr[i]
+        if tok_peek.kind == TokenKind.TokLBracket {
+            p = tok_peek.next_pos
+            let idx_res: ParseResult = parse_idx_expr(src, p)
+            p = idx_res.next_pos
+            let tok_close: Token = next_token(src, p)
+            if tok_close.kind == TokenKind.TokDot {
+                let tok_dot2: Token = next_token(src, tok_close.next_pos)
+                if tok_dot2.kind == TokenKind.TokDot {
+                    p = tok_dot2.next_pos
+                    let end_res: ParseResult = parse_idx_expr(src, p)
+                    p = end_res.next_pos
+                    let tok_rb: Token = next_token(src, p)
+                    p = tok_rb.next_pos
+                    res_text = "stkt_str_slice({tok_primary.text}, {idx_res.text}, {end_res.text})"
+                }
+            }
+            if tok_close.kind != TokenKind.TokDot {
+                p = tok_close.next_pos
+                if is_slice_var(src, tok_primary.text) {
+                    res_text = "{tok_primary.text}.buf->data[{idx_res.text}]"
+                }
+                if !is_slice_var(src, tok_primary.text) {
+                    let node_access: IndexAccessNode = IndexAccessNode(tok_primary.text, idx_res.text, p)
+                    res_text = gen_index_access(node_access)
+                }
+            }
+        }
+
+        // Dot access: target.member or target.member(...)
+        if tok_peek.kind == TokenKind.TokDot {
+            p = tok_peek.next_pos
+            let member_tok: Token = next_token(src, p)
+            p = member_tok.next_pos
+
+            let after_member: Token = next_token(src, p)
+
+            // Method or module function call: target.member(...)
+            if after_member.kind == TokenKind.TokLParen {
+                p = after_member.next_pos
+                let dot_args: str = ""
+                let dot_has_args: bool = false
+                let tok_first_arg: Token = next_token(src, p)
+
+                if tok_first_arg.kind != TokenKind.TokRParen {
+                    while true {
+                        let dot_arg_res: ParseResult = parse_ternary(src, p)
+                        p = dot_arg_res.next_pos
+
+                        if dot_has_args {
+                            dot_args = "{dot_args}, {dot_arg_res.text}"
+                        }
+                        if !dot_has_args {
+                            dot_args = dot_arg_res.text
+                            dot_has_args = true
+                        }
+
+                        let dot_sep: Token = next_token(src, p)
+                        p = dot_sep.next_pos
+                        if dot_sep.kind == TokenKind.TokRParen {
+                            break
+                        }
+                    }
+                }
+                if tok_first_arg.kind == TokenKind.TokRParen {
+                    p = tok_first_arg.next_pos
+                }
+
+                let target_name: str = tok_primary.text
+                let member_name: str = member_tok.text
+
+                // Module function: math.sqrt(x) -> math_sqrt(x) or C math function
+                if is_module_name(src, target_name) {
+                    if target_name == "math" && (member_name == "sqrt" || member_name == "pow" || member_name == "floor" || member_name == "ceil" || member_name == "sin" || member_name == "cos") {
+                        res_text = "{member_name}({dot_args})"
+                    }
+                    if target_name != "math" || (member_name != "sqrt" && member_name != "pow" && member_name != "floor" && member_name != "ceil" && member_name != "sin" && member_name != "cos") {
+                        res_text = "{target_name}_{member_name}({dot_args})"
+                    }
+                }
+
+                // Built-in hmap methods
+                if !is_module_name(src, target_name) && is_hmap_var(src, target_name) {
+                    let is_str_map: bool = is_hmap_str_str(src, target_name)
+                    if member_name == "set" {
+                        if is_str_map {
+                            res_text = "__stkt_map_set_str_str({target_name}, {dot_args})"
+                        }
+                        if !is_str_map {
+                            res_text = "__stkt_map_set_str_i32({target_name}, {dot_args})"
+                        }
+                    }
+                    if member_name == "has" {
+                        if is_str_map {
+                            res_text = "__stkt_map_has_str_str({target_name}, {dot_args})"
+                        }
+                        if !is_str_map {
+                            res_text = "__stkt_map_has_str_i32({target_name}, {dot_args})"
+                        }
+                    }
+                    if member_name == "keys" {
+                        if is_str_map {
+                            res_text = "__stkt_map_keys_str_str({target_name})"
+                        }
+                        if !is_str_map {
+                            res_text = "__stkt_map_keys_str_i32({target_name})"
+                        }
+                    }
+                    if member_name == "get" {
+                        if is_str_map {
+                            res_text = "__stkt_map_get_str_str({target_name}, {dot_args})"
+                        }
+                        if !is_str_map {
+                            res_text = "__stkt_map_get_str_i32({target_name}, {dot_args})"
+                        }
+                    }
+                }
+
+                // Built-in string methods
+                if !is_module_name(src, target_name) && !is_hmap_var(src, target_name) {
+                    if member_name == "trim" {
+                        res_text = "stkt_str_trim({target_name})"
+                    }
+                    if member_name == "split" {
+                        res_text = "stkt_str_split({target_name}, {dot_args})"
+                    }
+                    if member_name == "contains" {
+                        res_text = "stkt_str_contains({target_name}, {dot_args})"
+                    }
+                    if member_name != "trim" && member_name != "split" && member_name != "contains" {
+                        // Struct method: p.move(10) -> move(p, 10)
+                        if dot_has_args {
+                            dot_args = "{target_name}, {dot_args}"
+                        }
+                        if !dot_has_args {
+                            dot_args = target_name
+                        }
+                        res_text = "{member_name}({dot_args})"
+                    }
+                }
+            }
+
+            if after_member.kind != TokenKind.TokLParen {
+                // Plain property / enum variant / struct field access: target.member
+                let node_acc: TypeAccessNode = TypeAccessNode(tok_primary.text, member_tok.text, p)
+                res_text = gen_typeaccess(src, node_acc)
+            }
+        }
+
+        if tok_peek.kind != TokenKind.TokLParen && tok_peek.kind != TokenKind.TokLBracket && tok_peek.kind != TokenKind.TokDot {
+            res_text = tok_primary.text
+        }
+
+        // Postfix error handling chaining: .isok?(msg) and .or(fallback)
+        while true {
+            let peek_id_err: Token = next_token(src, p)
+            if peek_id_err.kind == TokenKind.TokDot {
+                let tok_id_mem: Token = next_token(src, peek_id_err.next_pos)
+                if tok_id_mem.kind == TokenKind.TokIsok || tok_id_mem.text == "isok?" {
+                    let tok_id_isok_lp: Token = next_token(src, tok_id_mem.next_pos)
+                    let msg_id_res: ParseResult = parse_primary(src, tok_id_isok_lp.next_pos)
+                    let tok_id_isok_rp: Token = next_token(src, msg_id_res.next_pos)
+                    let isok_id_node: IsOkNode = IsOkNode(res_text, msg_id_res.text, "", 0)
+                    res_text = gen_isok(isok_id_node)
+                    p = tok_id_isok_rp.next_pos
+                    continue
+                }
+                if tok_id_mem.text == "or" {
+                    let tok_id_or_lp: Token = next_token(src, tok_id_mem.next_pos)
+                    let fb_id_res: ParseResult = parse_primary(src, tok_id_or_lp.next_pos)
+                    let tok_id_or_rp: Token = next_token(src, fb_id_res.next_pos)
+                    let or_id_node: OrNode = OrNode(res_text, fb_id_res.text, "", 0)
+                    res_text = gen_or(or_id_node)
+                    p = tok_id_or_rp.next_pos
+                    continue
+                }
+            }
+            break
+        }
+
+        return ParseResult(res_text, p)
+    }
+
+    return ParseResult("", p)
+}
+
+// Terms (* and /)
+export fn parse_term: ParseResult(src: str, start: i32) {
+    let res: ParseResult = parse_primary(src, start)
+    while true {
+        let op_tok: Token = next_token(src, res.next_pos)
+        if op_tok.kind != TokenKind.TokStar && op_tok.kind != TokenKind.TokSlash {
+            return res
+        }
+        let rhs: ParseResult = parse_primary(src, op_tok.next_pos)
+        let combined: str = "{res.text} {op_tok.text} {rhs.text}"
+        res = ParseResult(combined, rhs.next_pos)
+    }
+    return res
+}
+
+export fn is_str_operand: bool(src: str, expr: str) {
+    if len(expr) >= 2 && expr[0] == '"' {
+        return true
+    }
+    if expr.contains(".text") || expr.contains("stkt_str_") || expr.contains("stkt_format(") || expr.contains("read_text(") || expr.contains("to_c_type(") {
+        return true
+    }
+    let t: str = find_var_type(src, expr)
+    if t == "str" {
+        return true
+    }
+    return false
+}
+
+export fn parse_additive: ParseResult(src: str, start: i32) {
+    let res: ParseResult = parse_term(src, start)
+    while true {
+        let op_tok: Token = next_token(src, res.next_pos)
+        if op_tok.kind != TokenKind.TokPlus && op_tok.kind != TokenKind.TokMinus {
+            return res
+        }
+        let rhs: ParseResult = parse_term(src, op_tok.next_pos)
+        let is_s: bool = is_str_operand(src, res.text) || is_str_operand(src, rhs.text)
+        let combined: str = ""
+        if is_s && op_tok.kind == TokenKind.TokPlus {
+            combined = "stkt_str_concat({res.text}, {rhs.text})"
+        }
+        if !is_s || op_tok.kind != TokenKind.TokPlus {
+            combined = "{res.text} {op_tok.text} {rhs.text}"
+        }
+        res = ParseResult(combined, rhs.next_pos)
+    }
+    return res
+}
+
+export fn parse_relational: ParseResult(src: str, start: i32) {
+    let res: ParseResult = parse_additive(src, start)
+    while true {
+        let op_tok: Token = next_token(src, res.next_pos)
+        if op_tok.kind != TokenKind.TokGt && op_tok.kind != TokenKind.TokLt && op_tok.kind != TokenKind.TokGe && op_tok.kind != TokenKind.TokLe {
+            return res
+        }
+        let rhs: ParseResult = parse_additive(src, op_tok.next_pos)
+        let combined: str = "{res.text} {op_tok.text} {rhs.text}"
+        res = ParseResult(combined, rhs.next_pos)
+    }
+    return res
+}
+
+export fn parse_equality: ParseResult(src: str, start: i32) {
+    let res: ParseResult = parse_relational(src, start)
+    while true {
+        let op_tok: Token = next_token(src, res.next_pos)
+        if op_tok.kind != TokenKind.TokEq && op_tok.kind != TokenKind.TokNe {
+            return res
+        }
+        let rhs: ParseResult = parse_relational(src, op_tok.next_pos)
+        let is_s: bool = is_str_operand(src, res.text) || is_str_operand(src, rhs.text)
+        let combined: str = ""
+        if is_s && op_tok.kind == TokenKind.TokEq {
+            combined = "(strcmp({res.text}, {rhs.text}) == 0)"
+        }
+        if is_s && op_tok.kind == TokenKind.TokNe {
+            combined = "(strcmp({res.text}, {rhs.text}) != 0)"
+        }
+        if !is_s {
+            combined = "{res.text} {op_tok.text} {rhs.text}"
+        }
+        res = ParseResult(combined, rhs.next_pos)
+    }
+    return res
+}
+
+export fn parse_logical_and: ParseResult(src: str, start: i32) {
+    let res: ParseResult = parse_equality(src, start)
+    while true {
+        let op_tok: Token = next_token(src, res.next_pos)
+        if op_tok.kind != TokenKind.TokAnd {
+            return res
+        }
+        let rhs: ParseResult = parse_equality(src, op_tok.next_pos)
+        let combined: str = "{res.text} && {rhs.text}"
+        res = ParseResult(combined, rhs.next_pos)
+    }
+    return res
+}
+
+export fn parse_expr: ParseResult(src: str, start: i32) {
+    let res: ParseResult = parse_logical_and(src, start)
+    while true {
+        let op_tok: Token = next_token(src, res.next_pos)
+        if op_tok.kind != TokenKind.TokOr {
+            return res
+        }
+        let rhs: ParseResult = parse_logical_and(src, op_tok.next_pos)
+        let combined: str = "{res.text} || {rhs.text}"
+        res = ParseResult(combined, rhs.next_pos)
+    }
+    return res
+}
+
+// Ternary Expression : x > 10 ? true : false
+export fn parse_ternary: ParseResult(src: str, start: i32) {
+    let p: i32 = start
+    let cond: ParseResult = parse_expr(src, p)
+    p = cond.next_pos
+
+    let tok_ternary: Token = next_token(src, p)
+    if tok_ternary.kind != TokenKind.TokQuestion {
+        return cond
+    }
+    p = tok_ternary.next_pos
+
+    let true_res: ParseResult = parse_expr(src, p)
+    p = true_res.next_pos
+    let true_str: str = true_res.text
+
+    let tok_colon: Token = next_token(src, p)
+    p = tok_colon.next_pos
+
+    let false_res: ParseResult = parse_expr(src, p)
+    p = false_res.next_pos
+    let false_str: str = false_res.text
+
+    let n_ternary: TernaryNode = TernaryNode(cond.text, true_str, false_str, p)
+    return ParseResult(gen_ternary(n_ternary), p)
+}
+
+// Variable Declaration Parser: let <ident>[: <type>] = <val>
+export fn parse_let: LetNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_let: Token = next_token(src, p)
+    p = tok_let.next_pos
+
+    let tok_ident: Token = next_token(src, p)
+    p = tok_ident.next_pos
+
+    let tok_next: Token = next_token(src, p)
+    p = tok_next.next_pos
+
+    let type_name: str = "i32"
+
+    // Optional type annotation: let x: type = val
+    if tok_next.kind == TokenKind.TokColon {
+        let tok_t: Token = next_token(src, p)
+        p = tok_t.next_pos
+        type_name = tok_t.text
+
+        if tok_t.kind == TokenKind.TokLBracket {
+            let tok_elem: Token = next_token(src, p)
+            p = tok_elem.next_pos
+            let tok_rb: Token = next_token(src, p)
+            p = tok_rb.next_pos
+            type_name = "[{tok_elem.text}]"
+        }
+
+        if tok_t.text == "hmap" {
+            p = tok_t.next_pos
+            // Consume [
+            let tok_lb_m: Token = next_token(src, p)
+            p = tok_lb_m.next_pos
+            // Consume key type
+            let tok_k_t: Token = next_token(src, p)
+            p = tok_k_t.next_pos
+            // Consume : or ,
+            let tok_sep_m: Token = next_token(src, p)
+            p = tok_sep_m.next_pos
+            // Consume val type
+            let tok_v_t: Token = next_token(src, p)
+            p = tok_v_t.next_pos
+            // Consume ]
+            let tok_rb_m: Token = next_token(src, p)
+            p = tok_rb_m.next_pos
+
+            // Consume '='
+            let tok_eq_m: Token = next_token(src, p)
+            p = tok_eq_m.next_pos
+
+            // Consume '{}', '{' '}', or 'hmap()'
+            let tok_val_m: Token = next_token(src, p)
+            p = tok_val_m.next_pos
+            if tok_val_m.kind == TokenKind.TokLBrace {
+                let tok_peek_rb: Token = next_token(src, p)
+                if tok_peek_rb.kind == TokenKind.TokRBrace {
+                    p = tok_peek_rb.next_pos
+                }
+            }
+            if tok_val_m.text == "hmap" || tok_val_m.kind == TokenKind.TokHMap {
+                let tok_lp_m: Token = next_token(src, p)
+                if tok_lp_m.kind == TokenKind.TokLParen {
+                    p = tok_lp_m.next_pos
+                    let tok_rp_m: Token = next_token(src, p)
+                    if tok_rp_m.kind == TokenKind.TokRParen {
+                        p = tok_rp_m.next_pos
+                    }
+                }
+            }
+
+            let map_init_val: str = "__stkt_map_create_str_i32()"
+            let map_c_type: str = "__stkt_map_str_i32*"
+            if tok_v_t.text == "str" {
+                map_init_val = "__stkt_map_create_str_str()"
+                map_c_type = "__stkt_map_str_str*"
+            }
+            return LetNode(tok_ident.text, map_c_type, map_init_val, p)
+        }
+
+        // Check for str[N]
+        let tok_peek: Token = next_token(src, p)
+        if tok_peek.kind == TokenKind.TokLBracket {
+            p = tok_peek.next_pos
+            let tok_num: Token = next_token(src, p)
+            p = tok_num.next_pos
+            let tok_close: Token = next_token(src, p)
+            p = tok_close.next_pos
+            let cap: i32 = tok_num.val
+            type_name = "{tok_t.text}[{cap}]"
+        }
+
+        // Consume '='
+        let tok_eq: Token = next_token(src, p)
+        p = tok_eq.next_pos
+    }
+
+    let expr_res: ParseResult = parse_ternary(src, p)
+    p = expr_res.next_pos
+
+    let str_val: str = expr_res.text
+
+    // Infer type if not explicitly annotated
+    if tok_next.kind != TokenKind.TokColon {
+        if len(str_val) > 0 && str_val[0..1] == "\"" {
+            type_name = "str"
+        }
+        if len(str_val) > 0 && str_val[0..1] == "'" {
+            type_name = "char"
+        }
+        if str_val == "true" || str_val == "false" {
+            type_name = "bool"
+        }
+    }
+
+    return LetNode(tok_ident.text, type_name, str_val, p)
+}
+
+// Array Declaration Parser: let A[5]: i32 = [1, 2, 3, 4, 5]
+export fn parse_array_decl: ArrayDeclNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_let: Token = next_token(src, p)
+    p = tok_let.next_pos
+
+    let tok_name: Token = next_token(src, p)
+    p = tok_name.next_pos
+
+    let tok_lbracket: Token = next_token(src, p)
+    p = tok_lbracket.next_pos
+
+    let tok_size: Token = next_token(src, p)
+    p = tok_size.next_pos
+    let size_val: str = tok_size.text
+
+    let tok_rbracket: Token = next_token(src, p)
+    p = tok_rbracket.next_pos
+
+    let tok_colon: Token = next_token(src, p)
+    p = tok_colon.next_pos
+
+    let tok_type: Token = next_token(src, p)
+    p = tok_type.next_pos
+    let type_name: str = tok_type.text
+
+    let elems_str: str = ""
+    let tok_peek: Token = next_token(src, p)
+    if tok_peek.kind == TokenKind.TokAssign {
+        p = tok_peek.next_pos
+        let elems_res: ParseResult = parse_primary(src, p)
+        p = elems_res.next_pos
+        elems_str = elems_res.text
+    }
+
+    return ArrayDeclNode(tok_name.text, size_val, type_name, elems_str, p)
+}
+
+// Assignment Parser: <ident> = <expr>
+export fn parse_assign: AssignNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_ident: Token = next_token(src, p)
+    p = tok_ident.next_pos
+
+    let tok_assign: Token = next_token(src, p)
+    p = tok_assign.next_pos
+
+    let val_res: ParseResult = parse_ternary(src, p)
+    p = val_res.next_pos
+
+    return AssignNode(tok_ident.text, val_res.text, p)
+}
+
+// Array Element Assignment Parser: arr[i] = val
+export fn parse_index_assign: IndexAssignNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_name: Token = next_token(src, p)
+    p = tok_name.next_pos
+
+    let tok_lbracket: Token = next_token(src, p)
+    p = tok_lbracket.next_pos
+
+    let idx_res: ParseResult = parse_primary(src, p)
+    p = idx_res.next_pos
+
+    let tok_rbracket: Token = next_token(src, p)
+    p = tok_rbracket.next_pos
+
+    let tok_eq: Token = next_token(src, p)
+    p = tok_eq.next_pos
+
+    let val_res: ParseResult = parse_ternary(src, p)
+    p = val_res.next_pos
+
+    return IndexAssignNode(tok_name.text, idx_res.text, val_res.text, p)
+}
+
+// Function Call Statement Parser: add(1, 2)
+export fn parse_call: CallNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_name: Token = next_token(src, p)
+    p = tok_name.next_pos
+
+    let tok_lparen: Token = next_token(src, p)
+    p = tok_lparen.next_pos
+
+    let args_str: str = ""
+    let has_arg: bool = false
+    let tok_first: Token = next_token(src, p)
+    if tok_first.kind != TokenKind.TokRParen {
+        while true {
+            let arg_res: ParseResult = parse_ternary(src, p)
+            p = arg_res.next_pos
+
+            if has_arg {
+                args_str = "{args_str}, {arg_res.text}"
+            }
+            if !has_arg {
+                args_str = arg_res.text
+                has_arg = true
+            }
+
+            let sep: Token = next_token(src, p)
+            p = sep.next_pos
+            if sep.kind == TokenKind.TokRParen {
+                break
+            }
+        }
+    }
+    if tok_first.kind == TokenKind.TokRParen {
+        p = tok_first.next_pos
+    }
+
+    return CallNode(tok_name.text, args_str, p)
+}
+
+// Output Statement Parser: onscreen <expr>
+export fn parse_onscreen: PrintNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_os: Token = next_token(src, p)
+    p = tok_os.next_pos
+
+    let val_res: ParseResult = parse_expr(src, p)
+    p = val_res.next_pos
+
+    let type_name: str = find_var_type(src, val_res.text)
+    return PrintNode(val_res.text, type_name, p)
+}
+
+// Return Statement Parser: return [<expr>]
+export fn parse_return: ReturnNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_ret: Token = next_token(src, p)
+    p = tok_ret.next_pos
+
+    let expr_res: ParseResult = parse_ternary(src, p)
+    p = expr_res.next_pos
+
+    return ReturnNode(expr_res.text, p)
+}
+
+// Break Parser: break
+export fn parse_break: BreakNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_break: Token = next_token(src, p)
+    p = tok_break.next_pos
+    return BreakNode(p)
+}
+
+// Continue Parser: continue
+export fn parse_continue: ContinueNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_cont: Token = next_token(src, p)
+    p = tok_cont.next_pos
+    return ContinueNode(p)
+}
+
+// FIX 5: Constant Parser — value now uses parse_ternary (was single token only)
+// const <name>: <type_name> = <value>
+export fn parse_const: ConstNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_const: Token = next_token(src, p)
+    p = tok_const.next_pos
+
+    let tok_name: Token = next_token(src, p)
+    p = tok_name.next_pos
+    let name_str: str = tok_name.text
+
+    let tok_colon: Token = next_token(src, p)
+    p = tok_colon.next_pos
+
+    let tok_type: Token = next_token(src, p)
+    p = tok_type.next_pos
+    let c_type: str = to_c_type(tok_type.text)
+
+    let tok_assign: Token = next_token(src, p)
+    p = tok_assign.next_pos
+
+    // FIX: was next_token (single token) — now parse_ternary (full expression)
+    let val_res: ParseResult = parse_ternary(src, p)
+    p = val_res.next_pos
+
+    return ConstNode(name_str, c_type, val_res.text, p)
+}
+
+// Collect tokens into a string until a ';' is found (the ';' is consumed).
+export fn collect_until_semi: ParseResult(src: str, start: i32) {
+    let p: i32 = start
+    let text: str = ""
+    let has_text: bool = false
+    while true {
+        let tok: Token = next_token(src, p)
+        if tok.kind == TokenKind.TokSemicolon || tok.kind == TokenKind.TokEof {
+            p = tok.next_pos
+            break
+        }
+        if has_text {
+            text = "{text} {tok.text}"
+        }
+        if !has_text {
+            text = tok.text
+            has_text = true
+        }
+        p = tok.next_pos
+    }
+    return ParseResult(text, p)
+}
+
+// Collect tokens into a string until '{' or ')' is reached (terminator is NOT consumed).
+export fn collect_until_brace: ParseResult(src: str, start: i32) {
+    let p: i32 = start
+    let text: str = ""
+    let has_text: bool = false
+    while true {
+        let tok: Token = next_token(src, p)
+        if tok.kind == TokenKind.TokLBrace || tok.kind == TokenKind.TokRParen || tok.kind == TokenKind.TokEof {
+            break
+        }
+        if has_text {
+            text = "{text} {tok.text}"
+        }
+        if !has_text {
+            text = tok.text
+            has_text = true
+        }
+        p = tok.next_pos
+    }
+    return ParseResult(text, p)
+}
+
+export fn parse_field: FieldNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_field_ident: Token = next_token(src, p)
+    p = tok_field_ident.next_pos
+    let field_ident: str = tok_field_ident.text
+
+    let tok_colon: Token = next_token(src, p)
+    p = tok_colon.next_pos
+
+    let type_token: Token = next_token(src, p)
+    p = type_token.next_pos
+    let type_str: str = type_token.text
+
+    let c_type_str: str = to_c_type(type_str)
+
+    let tok_sep: Token = next_token(src, p)
+    if tok_sep.kind == TokenKind.TokComma {
+        p = tok_sep.next_pos
+    }
+
+    return FieldNode(field_ident, c_type_str, p)
+}
+
+export fn parse_typedecl: TypeDeclNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_type_kw: Token = next_token(src, p)
+    p = tok_type_kw.next_pos
+
+    let tok_ident: Token = next_token(src, p)
+    p = tok_ident.next_pos
+    let struct_ident: str =  tok_ident.text
+
+    let tok_brace1 : Token = next_token(src, p)
+    p = tok_brace1.next_pos
+
+    let field_str: str = ""
+    while true {
+        let peek: Token = next_token(src, p)
+        if peek.kind == TokenKind.TokRBrace || peek.kind == TokenKind.TokEof {
+            p = peek.next_pos
+            break
+        }
+        let field_node: FieldNode = parse_field(src, p)
+        p = field_node.next
+        let field_code: str = gen_field(field_node)
+        field_str = "{field_str}{field_code}\n"
+    }
+    return TypeDeclNode(struct_ident, field_str, p)
+}
+
+export fn parse_enum: EnumNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_enum_kw: Token = next_token(src, p)
+    p = tok_enum_kw.next_pos
+
+    let tok_enum_ident: Token = next_token(src, p)
+    p = tok_enum_ident.next_pos
+    let enum_ident: str = tok_enum_ident.text
+
+    let tok_enum_lbrace: Token = next_token(src, p)
+    p = tok_enum_lbrace.next_pos
+
+    let variant_str: str = ""
+    while true {
+        let tok_peek: Token = next_token(src, p)
+        if tok_peek.kind == TokenKind.TokRBrace || tok_peek.kind == TokenKind.TokEof {
+            p = tok_peek.next_pos
+            break
+        }
+        let var_tok: Token = next_token(src, p)
+        p = var_tok.next_pos
+
+        let sep: Token = next_token(src, p)
+        if sep.kind == TokenKind.TokComma {
+            p = sep.next_pos
+        }
+
+        variant_str = "{variant_str}    {enum_ident}_{var_tok.text},\n"
+    }
+    return EnumNode(enum_ident, variant_str, p)
+}
+
+// Slice Declaration Parser: let arr: [i32] = [1, 2]
+export fn parse_slice_decl: SliceDeclNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_let: Token = next_token(src, p)
+    p = tok_let.next_pos
+
+    let tok_name: Token = next_token(src, p)
+    p = tok_name.next_pos
+
+    let tok_colon: Token = next_token(src, p)
+    p = tok_colon.next_pos
+
+    let tok_lbracket: Token = next_token(src, p)
+    p = tok_lbracket.next_pos
+
+    let tok_elem_type: Token = next_token(src, p)
+    p = tok_elem_type.next_pos
+    let elem_type_name: str = tok_elem_type.text
+
+    let tok_rbracket: Token = next_token(src, p)
+    p = tok_rbracket.next_pos
+
+    let tok_eq: Token = next_token(src, p)
+    p = tok_eq.next_pos
+
+    let elems_res: ParseResult = parse_primary(src, p)
+    p = elems_res.next_pos
+
+    return SliceDeclNode(tok_name.text, elem_type_name, elems_res.text, p)
+}
+
+// Central Statement Dispatcher: handles all leaf and compound statements recursively
+export fn parse_stmt: StmtResult(src: str, start: i32) {
+    let tok: Token = next_token(src, start)
+    let p: i32 = start
+
+    if tok.kind == TokenKind.TokLet {
+        let p_peek: i32 = tok.next_pos
+        let tok_name: Token = next_token(src, p_peek)
+        let tok_after_name: Token = next_token(src, tok_name.next_pos)
+        if tok_after_name.kind == TokenKind.TokLBracket {
+            let n_arr: ArrayDeclNode = parse_array_decl(src, start)
+            return StmtResult(gen_array_decl(n_arr), n_arr.next)
+        }
+        if tok_after_name.kind == TokenKind.TokColon {
+            let tok_after_colon: Token = next_token(src, tok_after_name.next_pos)
+            if tok_after_colon.kind == TokenKind.TokLBracket {
+                let p_chk: i32 = tok_after_colon.next_pos
+                let tok_elem_chk: Token = next_token(src, p_chk)
+                p_chk = tok_elem_chk.next_pos
+                let tok_rb_chk: Token = next_token(src, p_chk)
+                p_chk = tok_rb_chk.next_pos
+                let tok_eq_chk: Token = next_token(src, p_chk)
+                p_chk = tok_eq_chk.next_pos
+                let tok_val_chk: Token = next_token(src, p_chk)
+                if tok_val_chk.kind == TokenKind.TokLBracket {
+                    let n_slice: SliceDeclNode = parse_slice_decl(src, start)
+                    return StmtResult(gen_slice_decl(n_slice), n_slice.next)
+                }
+            }
+        }
+        let n_let: LetNode = parse_let(src, start)
+        return StmtResult(gen_let(n_let), n_let.next)
+    }
+    if tok.kind == TokenKind.TokAppend || (tok.kind == TokenKind.TokIdent && tok.text == "append") {
+        let p_app: i32 = tok.next_pos
+        let tok_lp: Token = next_token(src, p_app)
+        p_app = tok_lp.next_pos
+
+        let tok_arr: Token = next_token(src, p_app)
+        p_app = tok_arr.next_pos
+
+        let tok_comma: Token = next_token(src, p_app)
+        p_app = tok_comma.next_pos
+
+        let val_app_res: ParseResult = parse_ternary(src, p_app)
+        p_app = val_app_res.next_pos
+
+        let tok_rp: Token = next_token(src, p_app)
+        p_app = tok_rp.next_pos
+
+        let n_app: AppendNode = AppendNode(tok_arr.text, val_app_res.text, p_app)
+        return StmtResult(gen_append(n_app), p_app)
+    }
+    if tok.kind == TokenKind.TokIdent {
+        let p_after: i32 = tok.next_pos
+        let tok_ident_peek: Token = next_token(src, p_after)
+        if tok_ident_peek.kind == TokenKind.TokLBracket {
+            let n_idx: IndexAssignNode = parse_index_assign(src, start)
+            return StmtResult(gen_index_assign_slice(src, n_idx), n_idx.next)
+        }
+        if tok_ident_peek.kind == TokenKind.TokLParen {
+            let n_call: CallNode = parse_call(src, start)
+            return StmtResult(gen_call(n_call), n_call.next)
+        }
+        if tok_ident_peek.kind == TokenKind.TokDot {
+            let p_dot: i32 = tok_ident_peek.next_pos
+            let member_tok: Token = next_token(src, p_dot)
+            let p_member: i32 = member_tok.next_pos
+            let tok_after_mem: Token = next_token(src, p_member)
+            if tok_after_mem.kind == TokenKind.TokAssign {
+                let p_val: i32 = tok_after_mem.next_pos
+                let dot_val_res: ParseResult = parse_ternary(src, p_val)
+                let code_assign: str = "    {tok.text}.{member_tok.text} = {dot_val_res.text};"
+                return StmtResult(code_assign, dot_val_res.next_pos)
+            }
+            if tok_after_mem.kind == TokenKind.TokLParen {
+                let call_primary: ParseResult = parse_primary(src, start)
+                let code_call: str = "    {call_primary.text};"
+                return StmtResult(code_call, call_primary.next_pos)
+            }
+        }
+        let n_assign: AssignNode = parse_assign(src, start)
+        return StmtResult(gen_assign(n_assign), n_assign.next)
+    }
+    if tok.kind == TokenKind.TokOnscreen {
+        let n_print: PrintNode = parse_onscreen(src, start)
+        return StmtResult(gen_print(n_print), n_print.next)
+    }
+    if tok.kind == TokenKind.TokReturn {
+        let n_ret: ReturnNode = parse_return(src, start)
+        return StmtResult(gen_return(n_ret), n_ret.next)
+    }
+    if tok.kind == TokenKind.TokBreak {
+        let n_break: BreakNode = parse_break(src, start)
+        return StmtResult(gen_break(n_break), n_break.next)
+    }
+    if tok.kind == TokenKind.TokContinue {
+        let n_continue: ContinueNode = parse_continue(src, start)
+        return StmtResult(gen_continue(n_continue), n_continue.next)
+    }
+    if tok.kind == TokenKind.TokConst {
+        let n_const: ConstNode = parse_const(src, start)
+        return StmtResult(gen_const(n_const), n_const.next)
+    }
+    if tok.kind == TokenKind.TokType {
+        let n_type: TypeDeclNode = parse_typedecl(src, start)
+        return StmtResult(gen_typedecl(n_type), n_type.next)
+    }
+    if tok.kind == TokenKind.TokEnum {
+        let n_enum: EnumNode = parse_enum(src, start)
+        return StmtResult(gen_enum(n_enum), n_enum.next)
+    }
+
+    // Loop statement: while <cond> { <body> }
+    if tok.kind == TokenKind.TokWhile {
+        p = tok.next_pos
+        let con_res: ParseResult = parse_expr(src, p)
+        p = con_res.next_pos
+
+        let tok_while_lbrace: Token = next_token(src, p)
+        p = tok_while_lbrace.next_pos
+        let while_body: str = ""
+        while true {
+            let tok_while_peek: Token = next_token(src, p)
+            if tok_while_peek.kind == TokenKind.TokRBrace || tok_while_peek.kind == TokenKind.TokEof {
+                p = tok_while_peek.next_pos
+                break
+            }
+            let stmt: StmtResult = parse_stmt(src, p)
+            if stmt.next_pos <= p {
+                break
+            }
+            p = stmt.next_pos
+            while_body = "{while_body}    {stmt.code}\n"
+        }
+        let n_while: WhileNode = WhileNode(con_res.text, while_body, p)
+        return StmtResult(gen_while(n_while), p)
+    }
+
+    // Conditional statement: if <cond> { <body> } [else { <else_body> }]
+    if tok.kind == TokenKind.TokIf {
+        p = tok.next_pos
+        let cond_res: ParseResult = parse_expr(src, p)
+        p = cond_res.next_pos
+
+        let tok_if_lbrace: Token = next_token(src, p)
+        p = tok_if_lbrace.next_pos
+
+        let if_body: str = ""
+        while true {
+            let tok_if_peek: Token = next_token(src, p)
+            if tok_if_peek.kind == TokenKind.TokRBrace || tok_if_peek.kind == TokenKind.TokEof {
+                p = tok_if_peek.next_pos
+                break
+            }
+            let stmt2: StmtResult = parse_stmt(src, p)
+            if stmt2.next_pos <= p {
+                break
+            }
+            p = stmt2.next_pos
+            if_body = "{if_body}    {stmt2.code}\n"
+        }
+
+        let else_body: str = ""
+        let tok_else: Token = next_token(src, p)
+        if tok_else.kind == TokenKind.TokElse {
+            p = tok_else.next_pos
+            let peek_after_else: Token = next_token(src, p)
+            if peek_after_else.kind == TokenKind.TokIf {
+                let stmt_elif: StmtResult = parse_stmt(src, p)
+                p = stmt_elif.next_pos
+                else_body = "    {stmt_elif.code}\n"
+            }
+            if peek_after_else.kind != TokenKind.TokIf {
+                let tok_else_lbrace: Token = peek_after_else
+                p = tok_else_lbrace.next_pos
+                while true {
+                    let tok_else_peek: Token = next_token(src, p)
+                    if tok_else_peek.kind == TokenKind.TokRBrace || tok_else_peek.kind == TokenKind.TokEof {
+                        p = tok_else_peek.next_pos
+                        break
+                    }
+                    let stmt3: StmtResult = parse_stmt(src, p)
+                    if stmt3.next_pos <= p {
+                        break
+                    }
+                    p = stmt3.next_pos
+                    else_body = "{else_body}    {stmt3.code}\n"
+                }
+            }
+        }
+
+        let n_if: IfNode = IfNode(cond_res.text, if_body, else_body, p)
+        return StmtResult(gen_if(n_if), p)
+    }
+
+    // For Loops: both 'for item in collection' and C-style 'for (init; cond; iter)'
+    if tok.kind == TokenKind.TokFor {
+        p = tok.next_pos
+
+        let tok_first: Token = next_token(src, p)
+        let tok_second: Token = next_token(src, tok_first.next_pos)
+
+        // 1. Check for collection loop: for item in collection { ... }
+        if tok_first.kind == TokenKind.TokIdent && tok_second.kind == TokenKind.TokIn {
+            let ident_name: str = tok_first.text
+            p = tok_second.next_pos
+
+            let col: ParseResult = parse_expr(src, p)
+            p = col.next_pos
+            let col_str: str = col.text
+
+            let tok_lbrace_forin: Token = next_token(src, p)
+            p = tok_lbrace_forin.next_pos
+
+            let body_str: str = ""
+            while true {
+                let tok_peek_forin: Token = next_token(src, p)
+                if tok_peek_forin.kind == TokenKind.TokRBrace || tok_peek_forin.kind == TokenKind.TokEof {
+                    p = tok_peek_forin.next_pos
+                    break
+                }
+                let stmt_forin: StmtResult = parse_stmt(src, p)
+                if stmt_forin.next_pos <= p {
+                    break
+                }
+                p = stmt_forin.next_pos
+                body_str = "{body_str}    {stmt_forin.code}\n"
+            }
+
+            let n_forin: ForinNode = ForinNode(ident_name, col_str, body_str, p)
+            return StmtResult(gen_for_in(n_forin), p)
+        }
+
+        // 2. C-style loop: for [( ] init; cond; iter [) ] { ... }
+        // Each section is collected token-by-token so full expressions work.
+
+        // Skip optional opening '('
+        if tok_first.kind == TokenKind.TokLParen {
+            p = tok_first.next_pos
+        }
+
+        // Collect init expression up to the first ';'
+        let init_res: ParseResult = collect_until_semi(src, p)
+        p = init_res.next_pos
+        let init_str: str = init_res.text
+
+        // Collect condition expression up to the second ';'
+        let cond_res2: ParseResult = collect_until_semi(src, p)
+        p = cond_res2.next_pos
+        let cond_str: str = cond_res2.text
+
+        // Collect iterator expression up to ')' or '{'
+        let iter_res: ParseResult = collect_until_brace(src, p)
+        p = iter_res.next_pos
+        let iter_str: str = iter_res.text
+
+        // Skip closing ')' if the loop was written with parentheses
+        let tok_maybe_rp: Token = next_token(src, p)
+        if tok_maybe_rp.kind == TokenKind.TokRParen {
+            p = tok_maybe_rp.next_pos
+        }
+
+        // Consume the opening '{'
+        let tok_lbrace_forc: Token = next_token(src, p)
+        p = tok_lbrace_forc.next_pos
+
+        let for_body: str = ""
+        while true {
+            let tok_for_peek: Token = next_token(src, p)
+            if tok_for_peek.kind == TokenKind.TokRBrace || tok_for_peek.kind == TokenKind.TokEof {
+                p = tok_for_peek.next_pos
+                break
+            }
+            let stmt_forc: StmtResult = parse_stmt(src, p)
+            if stmt_forc.next_pos <= p {
+                break
+            }
+            p = stmt_forc.next_pos
+            for_body = "{for_body}    {stmt_forc.code}\n"
+        }
+
+        let n_for_c: ForNode = ForNode(init_str, cond_str, iter_str, for_body, p)
+        return StmtResult(gen_for(n_for_c), p)
+    }
+
+    // Counted Loop: loop <times> [step <step>] { <body> }
+    if tok.kind == TokenKind.TokLoop {
+        p = tok.next_pos
+
+        let times: ParseResult = parse_expr(src, p)
+        p = times.next_pos
+        let times_str: str = times.text
+
+        let tok_next: Token = next_token(src, p)
+        let step_str: str = "1"
+
+        if tok_next.kind == TokenKind.TokStep {
+            p = tok_next.next_pos
+            let step_res: ParseResult = parse_expr(src, p)
+            p = step_res.next_pos
+            step_str = step_res.text
+        }
+
+        let tok_lbrace_loop: Token = next_token(src, p)
+        p = tok_lbrace_loop.next_pos
+
+        let loop_body: str = ""
+        while true {
+            let tok_peek_loop: Token = next_token(src, p)
+            if tok_peek_loop.kind == TokenKind.TokRBrace || tok_peek_loop.kind == TokenKind.TokEof {
+                p = tok_peek_loop.next_pos
+                break
+            }
+            let stmt_loop: StmtResult = parse_stmt(src, p)
+            if stmt_loop.next_pos <= p {
+                break
+            }
+            p = stmt_loop.next_pos
+            loop_body = "{loop_body}    {stmt_loop.code}\n"
+        }
+
+        let n_loop: LoopNode = LoopNode(times_str, step_str, loop_body, p)
+        return StmtResult(gen_loop(n_loop), p)
+    }
+
+    // Pattern Matching: match <cond> { case ... default ... }
+    if tok.kind == TokenKind.TokMatch {
+        p = tok.next_pos
+
+        let match_cond_res: ParseResult = parse_expr(src, p)
+        p = match_cond_res.next_pos
+
+        let tok_match_lbrace: Token = next_token(src, p)
+        p = tok_match_lbrace.next_pos
+
+        let all_cases: str = ""
+        while true {
+            let tok_case_peek: Token = next_token(src, p)
+            if tok_case_peek.kind == TokenKind.TokRBrace || tok_case_peek.kind == TokenKind.TokEof {
+                p = tok_case_peek.next_pos
+                break
+            }
+
+            // Case branch: case <val> { <body> }
+            if tok_case_peek.kind == TokenKind.TokCase {
+                p = tok_case_peek.next_pos
+
+                let val_res: ParseResult = parse_expr(src, p)
+                p = val_res.next_pos
+
+                let tok_c_lbrace: Token = next_token(src, p)
+                p = tok_c_lbrace.next_pos
+
+                let case_body: str = ""
+                while true {
+                    let tok_b_peek: Token = next_token(src, p)
+                    if tok_b_peek.kind == TokenKind.TokRBrace || tok_b_peek.kind == TokenKind.TokEof {
+                        p = tok_b_peek.next_pos
+                        break
+                    }
+                    let stmt_case: StmtResult = parse_stmt(src, p)
+                    if stmt_case.next_pos <= p { break }
+                    p = stmt_case.next_pos
+                    case_body = "{case_body}        {stmt_case.code}\n"
+                }
+
+                let n_case: CaseNode = CaseNode(val_res.text, case_body, false, p)
+                let c_code: str = gen_case(n_case)
+                all_cases = "{all_cases}{c_code}"
+            }
+
+            // Default branch: default { <body> }
+            if tok_case_peek.kind == TokenKind.TokDefault {
+                p = tok_case_peek.next_pos
+
+                let tok_d_lbrace: Token = next_token(src, p)
+                p = tok_d_lbrace.next_pos
+
+                let def_body: str = ""
+                while true {
+                    let tok_d_peek: Token = next_token(src, p)
+                    if tok_d_peek.kind == TokenKind.TokRBrace || tok_d_peek.kind == TokenKind.TokEof {
+                        p = tok_d_peek.next_pos
+                        break
+                    }
+                    let stmt_def: StmtResult = parse_stmt(src, p)
+                    if stmt_def.next_pos <= p { break }
+                    p = stmt_def.next_pos
+                    def_body = "{def_body}        {stmt_def.code}\n"
+                }
+
+                let n_def: CaseNode = CaseNode("", def_body, true, p)
+                let d_code: str = gen_case(n_def)
+                all_cases = "{all_cases}{d_code}"
+            }
+        }
+
+        let n_match: MatchNode = MatchNode(match_cond_res.text, all_cases, p)
+        return StmtResult(gen_match(n_match), p)
+    }
+
+    return StmtResult("", start)
+}
+
+// Procedure Parser: proc <name>: <ret_type>(<params>) { <body> }
+export fn parse_proc: ProcNode(src: str, start: i32) {
+    let p: i32 = start
+    let tok_proc: Token = next_token(src, p)
+    p = tok_proc.next_pos
+
+    let tok_name: Token = next_token(src, p)
+    p = tok_name.next_pos
+
+    let tok_colon: Token = next_token(src, p)
+    p = tok_colon.next_pos
+
+    let tok_ret: Token = next_token(src, p)
+    p = tok_ret.next_pos
+
+    let ret_type_name: str = tok_ret.text
+    if tok_ret.kind == TokenKind.TokLBracket {
+        let ret_elem: Token = next_token(src, p)
+        p = ret_elem.next_pos
+        let ret_rb: Token = next_token(src, p)
+        p = ret_rb.next_pos
+        ret_type_name = "stkt_slice_{ret_elem.text}"
+    }
+
+    let tok_lparen: Token = next_token(src, p)
+    p = tok_lparen.next_pos
+
+    let params_str: str = ""
+    let has_param: bool = false
+    let tok_first: Token = next_token(src, p)
+    if tok_first.kind != TokenKind.TokRParen {
+        while true {
+            let p_name: Token = next_token(src, p)
+            p = p_name.next_pos
+
+            let p_colon: Token = next_token(src, p)
+            p = p_colon.next_pos
+
+            let p_type: Token = next_token(src, p)
+            p = p_type.next_pos
+
+            let c_type: str = ""
+            if p_type.kind == TokenKind.TokLBracket {
+                let elem_tok: Token = next_token(src, p)
+                p = elem_tok.next_pos
+                let rb_tok: Token = next_token(src, p)
+                p = rb_tok.next_pos
+                c_type = "stkt_slice_{elem_tok.text}"
+            }
+            if p_type.kind != TokenKind.TokLBracket {
+                c_type = to_c_type(p_type.text)
+            }
+
+            if has_param {
+                params_str = "{params_str}, {c_type} {p_name.text}"
+            }
+            if !has_param {
+                params_str = "{c_type} {p_name.text}"
+                has_param = true
+            }
+
+            let sep: Token = next_token(src, p)
+            p = sep.next_pos
+            if sep.kind == TokenKind.TokRParen {
+                break
+            }
+        }
+    }
+    if tok_first.kind == TokenKind.TokRParen {
+        p = tok_first.next_pos
+    }
+
+    let tok_lbrace: Token = next_token(src, p)
+    p = tok_lbrace.next_pos
+
+    let body_str: str = ""
+    while true {
+        let tok_peek: Token = next_token(src, p)
+        if tok_peek.kind == TokenKind.TokRBrace || tok_peek.kind == TokenKind.TokEof {
+            p = tok_peek.next_pos
+            break
+        }
+        let stmt: StmtResult = parse_stmt(src, p)
+        if stmt.next_pos <= p {
+            break
+        }
+        p = stmt.next_pos
+        body_str = "{body_str}    {stmt.code}\n"
+    }
+
+    return ProcNode(tok_name.text, ret_type_name, params_str, body_str, p)
+}
+
+// FIX 2: extract_lambdas — lambda body now parsed with parse_stmt instead of
+// raw token concatenation, so let/if/while/return inside lambdas emit correct C code.
+export fn extract_lambdas: str(src: str) {
+    let p: i32 = 0
+    let out: str = ""
+    let l_id: str = "0"
+    while true {
+        let tok: Token = next_token(src, p)
+        if tok.kind == TokenKind.TokEof {
+            break
+        }
+        if tok.kind == TokenKind.TokLambda {
+            p = tok.next_pos
+            let tok_col: Token = next_token(src, p)
+            p = tok_col.next_pos
+            let ret_t: Token = next_token(src, p)
+            p = ret_t.next_pos
+            let c_ret: str = to_c_type(ret_t.text)
+
+            let tok_lp: Token = next_token(src, p)
+            p = tok_lp.next_pos
+
+            let params_str: str = ""
+            let has_param: bool = false
+            let tok_first_param: Token = next_token(src, p)
+            if tok_first_param.kind != TokenKind.TokRParen {
+                while true {
+                    let p_name: Token = next_token(src, p)
+                    p = p_name.next_pos
+                    let p_col: Token = next_token(src, p)
+                    p = p_col.next_pos
+                    let p_type: Token = next_token(src, p)
+                    p = p_type.next_pos
+                    let c_type: str = to_c_type(p_type.text)
+                    if has_param {
+                        params_str = "{params_str}, {c_type} {p_name.text}"
+                    }
+                    if !has_param {
+                        params_str = "{c_type} {p_name.text}"
+                        has_param = true
+                    }
+                    let sep: Token = next_token(src, p)
+                    p = sep.next_pos
+                    if sep.kind == TokenKind.TokRParen {
+                        break
+                    }
+                }
+            }
+            if tok_first_param.kind == TokenKind.TokRParen {
+                p = tok_first_param.next_pos
+            }
+
+            let tok_lb: Token = next_token(src, p)
+            p = tok_lb.next_pos
+
+            // FIX: use parse_stmt for each statement in the lambda body
+            let body_str: str = ""
+            while true {
+                let peek: Token = next_token(src, p)
+                if peek.kind == TokenKind.TokRBrace || peek.kind == TokenKind.TokEof {
+                    p = peek.next_pos
+                    break
+                }
+                let lam_stmt: StmtResult = parse_stmt(src, p)
+                if lam_stmt.next_pos <= p {
+                    break
+                }
+                p = lam_stmt.next_pos
+                body_str = "{body_str}    {lam_stmt.code}\n"
+            }
+
+            let node_lam: LambdaNode = LambdaNode(l_id, ret_t.text, params_str, body_str, p)
+            let def_code: str = gen_lambda(node_lam)
+            out = "{out}{def_code}\n"
+        }
+        if tok.kind != TokenKind.TokLambda {
+            p = tok.next_pos
+        }
+    }
+    return out
+}
+
+export fn parse_program_defs: ProgramParts(src: str, alias: str, synced_files: [str]) {
+    let p: i32 = 0
+    let types: str = ""
+    let decls: str = ""
+    let procs: str = extract_lambdas(src)
+    while true {
+        let tok: Token = next_token(src, p)
+        if tok.kind == TokenKind.TokEof {
+            break
+        }
+        if tok.kind == TokenKind.TokExport || tok.text == "export" {
+            p = tok.next_pos
+            tok = next_token(src, p)
+            if tok.kind != TokenKind.TokProc && tok.kind != TokenKind.TokType && tok.kind != TokenKind.TokEnum {
+                p = tok.next_pos
+                tok = next_token(src, p)
+            }
+        }
+        if tok.kind == TokenKind.TokType {
+            let n_type: TypeDeclNode = parse_typedecl(src, p)
+            p = n_type.next
+            let type_c: str = gen_typedecl(n_type)
+            types = "{types}{type_c}\n"
+        }
+        if tok.kind == TokenKind.TokEnum {
+            let n_enum: EnumNode = parse_enum(src, p)
+            p = n_enum.next
+            let enum_c: str = gen_enum(n_enum)
+            types = "{types}{enum_c}\n"
+        }
+        if tok.kind == TokenKind.TokSync {
+            let n_sync: SyncNode = parse_sync(src, p)
+            p = n_sync.next
+            let mod_file: str = n_sync.module_path
+            let sync_key: str = "{n_sync.alias}:{mod_file}"
+            if !is_already_sync(synced_files, sync_key) {
+                append(synced_files, sync_key)
+                let mod_code: str = read_text(mod_file)
+                if len(mod_code) > 0 {
+                    let sub: ProgramParts = parse_program_defs(mod_code, n_sync.alias, synced_files)
+                    types = "{types}{sub.types}\n"
+                    decls = "{decls}{sub.decls}\n"
+                    procs = "{procs}{sub.procs}\n"
+                }
+            }
+        }
+        if tok.kind == TokenKind.TokProc {
+            let n_proc: ProcNode = parse_proc(src, p)
+            p = n_proc.next
+            let c_ret: str = to_c_type(n_proc.ret_type)
+            if len(alias) > 0 {
+                let proc_c_alias: str = gen_aliased_proc(n_proc, alias)
+                procs = "{procs}{proc_c_alias}\n"
+                decls = "{decls}{c_ret} {alias}_{n_proc.name}({n_proc.params});\n"
+            }
+            if len(alias) == 0 {
+                let proc_c_norm: str = gen_proc(n_proc)
+                procs = "{procs}{proc_c_norm}\n"
+                decls = "{decls}{c_ret} {n_proc.name}({n_proc.params});\n"
+            }
+        }
+        if tok.kind != TokenKind.TokType && tok.kind != TokenKind.TokEnum && tok.kind != TokenKind.TokProc && tok.kind != TokenKind.TokSync {
+            let stmt: StmtResult = parse_stmt(src, p)
+            if stmt.next_pos <= p {
+                break
+            }
+            p = stmt.next_pos
+        }
+    }
+    return ProgramParts(types, decls, procs)
+}
+
+export fn parse_program: str(src: str) {
+    let p: i32 = 0
+    let procs_str: str = extract_lambdas(src)
+    let decls_str: str = ""
+    let main_str: str = ""
+    let types_str: str = ""
+    let synced_files: [str] = []
+    while true {
+        let tok: Token = next_token(src, p)
+        if tok.kind == TokenKind.TokEof {
+            break
+        }
+        if tok.kind == TokenKind.TokExport || tok.text == "export" {
+            p = tok.next_pos
+            tok = next_token(src, p)
+            if tok.kind != TokenKind.TokProc && tok.kind != TokenKind.TokType && tok.kind != TokenKind.TokEnum {
+                p = tok.next_pos
+                tok = next_token(src, p)
+            }
+        }
+        if tok.kind == TokenKind.TokProc {
+            let n_proc: ProcNode = parse_proc(src, p)
+            p = n_proc.next
+            let proc_c: str = gen_proc(n_proc)
+            procs_str = "{procs_str}{proc_c}\n"
+            let c_ret: str = to_c_type(n_proc.ret_type)
+            decls_str = "{decls_str}{c_ret} {n_proc.name}({n_proc.params});\n"
+        }
+        if tok.kind == TokenKind.TokType {
+            let n_type: TypeDeclNode = parse_typedecl(src, p)
+            p = n_type.next
+            let type_c: str = gen_typedecl(n_type)
+            types_str = "{types_str}{type_c}\n"
+        }
+        if tok.kind == TokenKind.TokEnum {
+            let n_enum: EnumNode = parse_enum(src, p)
+            p = n_enum.next
+            let enum_c: str = gen_enum(n_enum)
+            types_str = "{types_str}{enum_c}\n"
+        }
+        if tok.kind == TokenKind.TokSync {
+            let n_sync: SyncNode = parse_sync(src, p)
+            p = n_sync.next
+            let mod_file: str = n_sync.module_path
+            let sync_key: str = "{n_sync.alias}:{mod_file}"
+
+            if !is_already_sync(synced_files, sync_key) {
+                append(synced_files, sync_key)
+
+                let mod_code: str = read_text(mod_file)
+                if len(mod_code) > 0 {
+                    let sub: ProgramParts = parse_program_defs(mod_code, n_sync.alias, synced_files)
+                    types_str = "{types_str}{sub.types}\n"
+                    decls_str = "{decls_str}{sub.decls}\n"
+                    procs_str = "{procs_str}{sub.procs}\n"
+                }
+            }
+        }
+        if tok.kind != TokenKind.TokProc && tok.kind != TokenKind.TokType && tok.kind != TokenKind.TokEnum && tok.kind != TokenKind.TokSync {
+            let stmt: StmtResult = parse_stmt(src, p)
+            if stmt.next_pos <= p {
+                break
+            }
+            p = stmt.next_pos
+            main_str = "{main_str}{stmt.code}\n"
+        }
+    }
+    let full_defs: str = "{types_str}\n{decls_str}\n{procs_str}"
+    return gen_program(full_defs, main_str)
+}

@@ -1,0 +1,34 @@
+let scores: hmap[str: i32] = {}
+scores.set("alice", 100)
+scores.set("bob", 95)
+
+let s_alice: i32 = scores.get("alice")
+let s_bob: i32 = scores.get("bob")
+let has_alice: bool = scores.has("alice")
+let has_charlie: bool = scores.has("charlie")
+
+onscreen s_alice
+onscreen s_bob
+onscreen has_alice
+onscreen has_charlie
+
+// Chained fallback .or()
+let val1: i32 = scores.get("alice").or(0)
+let val2: i32 = scores.get("unknown").or(42)
+onscreen val1
+onscreen val2
+
+// Keys iteration
+let inventory: hmap[str: i32] = {}
+inventory.set("apple", 10)
+inventory.set("banana", 25)
+inventory.set("orange", 15)
+
+let total: i32 = 0
+for item in inventory.keys() {
+    let count: i32 = inventory.get(item)
+    total = total + count
+}
+onscreen total
+
+onscreen "Native hmap test passed successfully!"

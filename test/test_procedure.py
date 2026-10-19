@@ -17,7 +17,7 @@ def _test(code: str):
 
 if __name__ == "__main__":
     _test("""
-proc add :i32(x :i32, y:i32) {
+fn add:i32(x :i32, y:i32) {
     x + y
 }
     """)

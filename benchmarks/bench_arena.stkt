@@ -1,0 +1,30 @@
+incl "time"
+incl "memory"
+
+onscreen "=== Stkt Native Memory Arena Benchmark ==="
+onscreen "Allocating 1,000,000 strings + instant reset..."
+
+let arena: Arena = create_mem(65536)
+let start: i64 = now_ms()
+
+let i: i32 = 0
+while i < 1000000 {
+    let s: str = mem_alloc_str(arena, "stkt_memory_arena_payload_item")
+    i = i + 1
+}
+
+let alloc_time: i64 = now_ms() - start
+onscreen "Allocation Time (ms):"
+onscreen alloc_time
+
+let reset_start: i64 = now_ms()
+mem_reset(arena)
+let reset_time: i64 = now_ms() - reset_start
+onscreen "Reset Time (ms):"
+onscreen reset_time
+
+let total_time: i64 = now_ms() - start
+onscreen "Total Time (ms):"
+onscreen total_time
+
+mem_destroy(arena)

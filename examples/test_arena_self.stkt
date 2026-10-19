@@ -1,0 +1,23 @@
+incl "time"
+incl "memory"
+
+onscreen "========================================"
+onscreen "Memory Arena Test via Self-Hosted Stkt"
+onscreen "========================================"
+
+let arena: Arena = create_mem(1024)
+
+let s1: str = mem_alloc_str(arena, "First allocated string in arena!")
+let s2: str = mem_alloc_str(arena, "Second allocated string in arena!")
+
+onscreen s1
+onscreen s2
+
+mem_reset(arena)
+onscreen "Arena reset successfully!"
+
+let s3: str = mem_alloc_str(arena, "Third allocated string after reset!")
+onscreen s3
+
+mem_destroy(arena)
+onscreen "Arena destroyed cleanly!"

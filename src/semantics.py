@@ -3,6 +3,7 @@ from parse import parser
 from lexicals import lexer
 from environment import Environment, Symbol
 from astnodes import (
+    Enum_Node,
     Program_Node,
     Int_Node,
     Float_Node,
@@ -91,6 +92,7 @@ class SemanticAnalyze:
         self.current_return_type = None
         self.loop_depth = 0
         self.namespaces = {}
+        self.synced_modules = set()
         # Builtin file primitives
         self.environment.define(Symbol(ident="stkt_file_exists", type_name="bool", param_type=["str"], is_exported=True))
         self.environment.define(Symbol(ident="stkt_file_write", type_name="bool", param_type=["str", "str"], is_exported=True))
@@ -101,9 +103,19 @@ class SemanticAnalyze:
         self.environment.define(Symbol(ident="stkt_args_count", type_name="i32", param_type=[], is_exported=True))
         self.environment.define(Symbol(ident="stkt_get_args", type_name="[str]", param_type=[], is_exported=True))
         self.environment.define(Symbol(ident="stkt_get_env", type_name="str", param_type=["str"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_system", type_name="i32", param_type=["str"], is_exported=True))
         self.environment.define(Symbol(ident="stkt_exit", type_name="void", param_type=["i32"], is_exported=True))
         self.environment.define(Symbol(ident="__stkt_set_err", type_name="void", param_type=[], is_exported=True))
         self.environment.define(Symbol(ident="__stkt_clear_err", type_name="void", param_type=[], is_exported=True))
+        # Builtin Time primitives
+        self.environment.define(Symbol(ident="stkt_time_now_ms", type_name="i64", param_type=[], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_time_now_us", type_name="i64", param_type=[], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_time_sleep_ms", type_name="void", param_type=["i32"], is_exported=True))
+        # Builtin Memory Arena primitives
+        self.environment.define(Symbol(ident="stkt_arena_create", type_name="i64", param_type=["i32"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_arena_alloc_str", type_name="str", param_type=["i64", "str"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_arena_reset", type_name="void", param_type=["i64"], is_exported=True))
+        self.environment.define(Symbol(ident="stkt_arena_destroy", type_name="void", param_type=["i64"], is_exported=True))
 
 
     def validate_call(self, proc_symbol, node: Call_Node):
@@ -144,8 +156,36 @@ class SemanticAnalyze:
                 raise SemanticError(f"Function '{node.ident}' argument {i} expected '{expected_type}', got '{actual_type}'"
             )
 
+    def _define_proc(self, node):
+        ident = node.ident
+        if self.environment.resolve(ident) is not None:
+            raise SemanticError(f"Procedure '{node.ident}' already defined in this scope")
+        if isinstance(node.return_type, Maptype_Node):
+            k = node.return_type.key_type.type_name if hasattr(node.return_type.key_type, "type_name") else str(node.return_type.key_type)
+            v = node.return_type.val_type.type_name if hasattr(node.return_type.val_type, "type_name") else str(node.return_type.val_type)
+            ret_type_str = f"hmap[{k}:{v}]"
+        else:
+            ret_type_str = node.return_type.type_name if hasattr(node.return_type, "type_name") else str(node.return_type)
+        param_types = []
+        for p in node.param:
+            if isinstance(p.type_name, Maptype_Node):
+                k = p.type_name.key_type.type_name if hasattr(p.type_name.key_type, "type_name") else str(p.type_name.key_type)
+                v = p.type_name.val_type.type_name if hasattr(p.type_name.val_type, "type_name") else str(p.type_name.val_type)
+                param_types.append(f"hmap[{k}:{v}]")
+            elif hasattr(p.type_name, "size") and p.type_name.size is not None and getattr(p.type_name, "type_name", "") == "str":
+                param_types.append(f"str[{p.type_name.size}]")
+            else:
+                param_types.append(p.type_name.type_name if hasattr(p.type_name, "type_name") else str(p.type_name))
+        proc_symbol = Symbol(ident=ident, type_name=ret_type_str, param_type=param_types, is_exported=node.is_exported)
+        self.environment.define(proc_symbol)
+        return proc_symbol
+
     def analyse(self, node):
         if isinstance(node, Program_Node):
+            for stmt in node.statements:
+                target = stmt.body if isinstance(stmt, Export_Node) else stmt
+                if isinstance(target, Procedure_Node):
+                    self._define_proc(target)
             for stmt in node.statements:
                 self.analyse(stmt)
 
@@ -217,15 +257,19 @@ class SemanticAnalyze:
                 else:
                     self.analyse(node.else_body)
 
+        elif isinstance(node, Enum_Node):
+            if node.ident in self.environment.symbols:
+                raise SemanticError(f"Enum '{node.ident}' is already defined in this scope")
+            enum_fields = {v: node.ident for v in node.variants}
+            enum_sym = Symbol(ident=node.ident, type_name=node.ident, fields=enum_fields, is_exported=True)
+            self.environment.define(enum_sym)
+
         elif isinstance(node, Procedure_Node):
             ident = node.ident
             proc_symbol = self.environment.resolve(ident)
-            if proc_symbol is not None:
-                raise SemanticError(f"Procedure '{node.ident}' already defined in this scope")
-            ret_type_str = node.return_type.type_name if hasattr(node.return_type, 'type_name') else str(node.return_type)
-            param_types = [p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name) for p in node.param]
-            proc_symbol = Symbol(ident=ident, type_name=ret_type_str, param_type=param_types, is_exported=node.is_exported)
-            self.environment.define(proc_symbol)
+            if proc_symbol is None:
+                proc_symbol = self._define_proc(node)
+            ret_type_str = proc_symbol.type_name
 
             prev_env = self.environment
             prev_return_type = self.current_return_type
@@ -236,9 +280,14 @@ class SemanticAnalyze:
             try:
                 for p in node.param:
                     p_name = p.ident
-                    if hasattr(p.type_name, "size") and p.type_name.size is not None:
-                        p_type_name = f"str[{p.type_name.size}"
-                    p_type_name = p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name)
+                    if isinstance(p.type_name, Maptype_Node):
+                        k = p.type_name.key_type.type_name if hasattr(p.type_name.key_type, 'type_name') else str(p.type_name.key_type)
+                        v = p.type_name.val_type.type_name if hasattr(p.type_name.val_type, 'type_name') else str(p.type_name.val_type)
+                        p_type_name = f"hmap[{k}:{v}]"
+                    elif hasattr(p.type_name, "size") and p.type_name.size is not None and getattr(p.type_name, "type_name", "") == "str":
+                        p_type_name = f"str[{p.type_name.size}]"
+                    else:
+                        p_type_name = p.type_name.type_name if hasattr(p.type_name, 'type_name') else str(p.type_name)
                     self.environment.define(Symbol(ident=p_name, type_name=p_type_name))
                 if isinstance(node.body, list):
                     for stmt in node.body:
@@ -536,7 +585,8 @@ class SemanticAnalyze:
             type_symbol = Symbol(
                 ident = node.ident,
                 type_name = node.ident,
-                fields = struct_fields
+                fields = struct_fields,
+                is_exported = True
             )
             self.environment.define(type_symbol)
             return "void"
@@ -562,7 +612,7 @@ class SemanticAnalyze:
                 raise SemanticError(f"'{node.ident}' is not a callable procedure")
 
         elif isinstance(node, Export_Node):
-            if self.environment.parent is not None :
+            if self.environment.parent is not None and self.environment.scope != "Sync":
                 raise SemanticError("Export statements are only allowed at top level scope")
             symbol = self.environment.resolve(node.ident)
             if symbol is None :
@@ -571,10 +621,16 @@ class SemanticAnalyze:
             return "void"
 
         elif isinstance(node, Sync_Node):
-            if self.environment.parent is not None :
+            if self.environment.parent is not None and self.environment.scope != "Sync":
                 raise SemanticError(f"Sync statements are only allowed at top level scope")
             raw_path = node.m_path.value if hasattr(node.m_path, "value") else str(node.m_path)
             module_path = resolve_module_path(raw_path)
+            resolved_key = str(module_path.resolve())
+            alias = getattr(node, "alias", None)
+            if not alias and resolved_key in self.synced_modules:
+                return "void"
+            if not alias:
+                self.synced_modules.add(resolved_key)
             if not module_path.exists():
                 raise SemanticError(f"Module '{node.m_path}' does not exist")
             with open(module_path, "r") as f:
@@ -689,6 +745,8 @@ class SemanticAnalyze:
                     else:
                         raise SemanticError(f"Operator {node.op} not compatible with '{left_type}' and '{right_type}' types")
                 elif node.op in ("-", "*", "/", "%"):
+                    if node.op == "-" and left_type == "char" and right_type == "char":
+                        return "i32"
                     if left_type != right_type or left_type not in NUMERIC_TYPES:
                         raise SemanticError(f"Operator {node.op} not compatible with '{left_type}' and '{right_type}' types")
                     return left_type

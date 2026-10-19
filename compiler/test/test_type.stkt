@@ -1,0 +1,14 @@
+type Point {
+    x: i32,
+    y: i32,
+}
+
+type Player {
+    id: i32,
+    score: f32,
+    tag: char,
+}
+
+let a: i32 = 10
+onscreen a
+onscreen "Type declaration compiled successfully!"

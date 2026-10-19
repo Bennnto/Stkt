@@ -4,8 +4,8 @@
   "scopeName": "source.stkt",
   "patterns": [
     { "include": "#comments" },
-    { "include": "#strings" },
     { "include": "#characters" },
+    { "include": "#strings" },
     { "include": "#numbers" },
     { "include": "#keywords" },
     { "include": "#types" },

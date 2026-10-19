@@ -1,4 +1,10 @@
-export proc set_contains: bool(s: [i32], val: i32){
+// ==========================================
+// Stkt Standard Library: SET (set.stkt)
+// ==========================================
+//
+
+
+export fn set_contains: bool(s: [i32], val: i32){
     let i: i32 = 0
     while i < len(s) {
         if s[i] == val {
@@ -9,7 +15,7 @@ export proc set_contains: bool(s: [i32], val: i32){
     return false
 }
 
-export proc set_add: bool(s: [i32], val: i32){
+export fn set_add: bool(s: [i32], val: i32){
     if set_contains(s, val) == true {
         return false
     }
@@ -17,11 +23,11 @@ export proc set_add: bool(s: [i32], val: i32){
     return true
 }
 
-export proc set_size: i32(s: [i32]){
+export fn set_size: i32(s: [i32]){
     return len(s)
 }
 
-export proc set_remove: bool(s: [i32], val: i32){
+export fn set_remove: bool(s: [i32], val: i32){
     let i: i32 = 0
     while i < len(s) {
         if s[i] == val {

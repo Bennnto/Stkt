@@ -1,0 +1,339 @@
+// ==========================================
+// Stkt Standard Library: JSON (json.stkt)
+// Lightweight JSON serializer & extractor
+// ==========================================
+
+export fn stringify_str :str(val: str) {
+    return "\"{val}\""
+}
+
+export fn stringify_bool :str(val: bool) {
+    if val {
+        return "true"
+    } else {
+        return "false"
+    }
+}
+
+export fn stringify_i32 :str(val: i32) {
+    return "{val}"
+}
+
+export fn stringify_kv :str(key: str, val_json: str) {
+    return "\"{key}\": {val_json}"
+}
+
+export fn has_key :bool(json_str: str, key: str) {
+    let target: str = "\"{key}\""
+    let n: i32 = len(json_str)
+    let m: i32 = len(target)
+    if m > n {
+        return false
+    }
+    let i: i32 = 0
+    while i <= (n - m) {
+        let is_matched: bool = true
+        let j: i32 = 0
+        while j < m {
+            if json_str[i + j] != target[j] {
+                is_matched = false
+                j = m
+            } else {
+                j = j + 1
+            }
+        }
+        if is_matched {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+export fn get_str :str(json_str: str, key: str) {
+    let target: str = "\"{key}\""
+    let n: i32 = len(json_str)
+    let m: i32 = len(target)
+    if m > n {
+        __stkt_set_err()
+        return ""
+    }
+
+    let key_pos: i32 = -1
+    let i: i32 = 0
+    while i <= (n - m) {
+        let is_matched: bool = true
+        let j: i32 = 0
+        while j < m {
+            if json_str[i + j] != target[j] {
+                is_matched = false
+                j = m
+            } else {
+                j = j + 1
+            }
+        }
+        if is_matched {
+            key_pos = i
+            i = n + 1
+        } else {
+            i = i + 1
+        }
+    }
+
+    if key_pos < 0 {
+        __stkt_set_err()
+        return ""
+    }
+
+    let p: i32 = key_pos + m
+    while p < n && json_str[p] != ':' {
+        p = p + 1
+    }
+    if p >= n {
+        __stkt_set_err()
+        return ""
+    }
+    p = p + 1
+
+    while p < n && (json_str[p] == ' ' || json_str[p] == '\t' || json_str[p] == '\n' || json_str[p] == '\r') {
+        p = p + 1
+    }
+    if p >= n || json_str[p] != '"' {
+        __stkt_set_err()
+        return ""
+    }
+    p = p + 1
+
+    let start_idx: i32 = p
+    while p < n && json_str[p] != '"' {
+        p = p + 1
+    }
+    if p > n {
+        __stkt_set_err()
+        return ""
+    }
+
+    return json_str[start_idx..p]
+}
+
+export fn get_int :i32(json_str: str, key: str) {
+    let target: str = "\"{key}\""
+    let n: i32 = len(json_str)
+    let m: i32 = len(target)
+    if m > n {
+        __stkt_set_err()
+        return 0
+    }
+
+    let key_pos: i32 = -1
+    let i: i32 = 0
+    while i <= (n - m) {
+        let is_matched: bool = true
+        let j: i32 = 0
+        while j < m {
+            if json_str[i + j] != target[j] {
+                is_matched = false
+                j = m
+            } else {
+                j = j + 1
+            }
+        }
+        if is_matched {
+            key_pos = i
+            i = n + 1
+        } else {
+            i = i + 1
+        }
+    }
+
+    if key_pos < 0 {
+        __stkt_set_err()
+        return 0
+    }
+
+    let p: i32 = key_pos + m
+    while p < n && json_str[p] != ':' {
+        p = p + 1
+    }
+    if p >= n {
+        __stkt_set_err()
+        return 0
+    }
+    p = p + 1
+
+    while p < n && (json_str[p] == ' ' || json_str[p] == '\t' || json_str[p] == '\n' || json_str[p] == '\r') {
+        p = p + 1
+    }
+    if p >= n {
+        __stkt_set_err()
+        return 0
+    }
+
+    let is_neg: bool = false
+    if json_str[p] == '-' {
+        is_neg = true
+        p = p + 1
+    }
+
+    let num: i32 = 0
+    let has_digits: bool = false
+    while p < n && json_str[p] >= '0' && json_str[p] <= '9' {
+        has_digits = true
+        let digit: i32 = (i32)json_str[p] - (i32)'0'
+        num = (num * 10) + digit
+        p = p + 1
+    }
+
+    if !has_digits {
+        __stkt_set_err()
+        return 0
+    }
+
+    if is_neg {
+        return -num
+    }
+    return num
+}
+
+export fn get_bool :bool(json_str: str, key: str) {
+    let target: str = "\"{key}\""
+    let n: i32 = len(json_str)
+    let m: i32 = len(target)
+    if m > n {
+        __stkt_set_err()
+        return false
+    }
+
+    let key_pos: i32 = -1
+    let i: i32 = 0
+    while i <= (n - m) {
+        let is_matched: bool = true
+        let j: i32 = 0
+        while j < m {
+            if json_str[i + j] != target[j] {
+                is_matched = false
+                j = m
+            } else {
+                j = j + 1
+            }
+        }
+        if is_matched {
+            key_pos = i
+            i = n + 1
+        } else {
+            i = i + 1
+        }
+    }
+
+    if key_pos < 0 {
+        __stkt_set_err()
+        return false
+    }
+
+    let p: i32 = key_pos + m
+    while p < n && json_str[p] != ':' {
+        p = p + 1
+    }
+    if p >= n {
+        __stkt_set_err()
+        return false
+    }
+    p = p + 1
+
+    while p < n && (json_str[p] == ' ' || json_str[p] == '\t' || json_str[p] == '\n' || json_str[p] == '\r') {
+        p = p + 1
+    }
+    if p >= n {
+        __stkt_set_err()
+        return false
+    }
+
+    if p + 4 <= n && json_str[p..p + 4] == "true" {
+        return true
+    }
+    if p + 5 <= n && json_str[p..p + 5] == "false" {
+        return false
+    }
+
+    __stkt_set_err()
+    return false
+}
+
+export fn dump_object :str(m: hmap[str: str]) {
+    let keys: [str] = m.keys()
+    let result: str = "{"
+    let i: i32 = 0
+    let n: i32 = len(keys)
+    while i < n {
+        let k: str = keys[i]
+        let v: str = m.get(k)
+        result = result + "\"{k}\": \"{v}\""
+        if i < n - 1 {
+            result = result + ", "
+        }
+        i = i + 1
+    }
+    result = result + "}"
+    return result
+}
+
+export fn parse_object :hmap[str: str](json_str: str) {
+    let result: hmap[str: str] = {}
+    let n: i32 = len(json_str)
+    let p: i32 = 0
+    let v_start: i32 = 0
+
+    while p < n {
+        while p < n && json_str[p] != '"' && json_str[p] != '}' {
+            p = p + 1
+        }
+        if p >= n || json_str[p] == '}' {
+            p = n
+        } else {
+            p = p + 1
+            let key_start: i32 = p
+            while p < n && json_str[p] != '"' {
+                p = p + 1
+            }
+            let key: str = json_str[key_start..p]
+            if p < n {
+                p = p + 1
+            }
+
+            while p < n && json_str[p] != ':' {
+                p = p + 1
+            }
+            if p < n {
+                p = p + 1
+            }
+
+            while p < n && (i32)json_str[p] <= 32 {
+                p = p + 1
+            }
+
+            if p < n {
+                if json_str[p] == '"' {
+                    p = p + 1
+                    v_start = p
+                    while p < n && json_str[p] != '"' {
+                        p = p + 1
+                    }
+                    let val_str: str = json_str[v_start..p]
+                    result.set(key, val_str)
+                    if p < n {
+                        p = p + 1
+                    }
+                } else {
+                    v_start = p
+                    while p < n && json_str[p] != ',' && json_str[p] != '}' && (i32)json_str[p] > 32 {
+                        p = p + 1
+                    }
+                    let val_prim: str = json_str[v_start..p]
+                    result.set(key, val_prim)
+                }
+            }
+        }
+    }
+
+    return result
+}

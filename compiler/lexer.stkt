@@ -1,0 +1,264 @@
+incl "compiler/token.stkt"
+
+export fn is_digit: bool(c: char) {
+    if c >= '0' && c <= '9' {
+        return true
+    }
+    return false
+}
+
+export fn is_alpha: bool(c: char) {
+    if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c == '_') {
+        return true
+    }
+    return false
+}
+
+export fn is_primitive_type: bool(word: str) {
+    if word == "i8" || word == "i16" || word == "i32" || word == "i64" { return true }
+    if word == "u8" || word == "u16" || word == "u32" || word == "u64" { return true }
+    if word == "f32" || word == "f64" || word == "bool" || word == "str" || word == "char" { return true }
+    if word == "int" || word == "float" { return true }
+    return false
+}
+
+export fn skip_whitespace: i32(src: str, start: i32) {
+    let p: i32 = start
+    let n: i32 = len(src)
+    while p < n {
+        let ch: char = src[p]
+        if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+            p = p + 1
+        } else {
+            if ch == '/' && p + 1 < n && src[p + 1] == '/' {
+                p = p + 2
+                while p < n && src[p] != '\n' {
+                    p = p + 1
+                }
+            } else {
+                return p
+            }
+        }
+    }
+    return p
+}
+
+export fn check_keyword: TokenKind(word: str) {
+    if word == "let" {
+        return TokenKind.TokLet
+    }
+    if word == "fn" {
+        return TokenKind.TokProc
+    }
+    if word == "if" {
+        return TokenKind.TokIf
+    }
+    if word == "else" {
+        return TokenKind.TokElse
+    }
+    if word == "while" {
+        return TokenKind.TokWhile
+    }
+    if word == "return" {
+        return TokenKind.TokReturn
+    }
+    if word == "onscreen" {
+        return TokenKind.TokOnscreen
+    }
+    if word == "break" {
+        return TokenKind.TokBreak
+    }
+    if word == "continue" {
+        return TokenKind.TokContinue
+    }
+    if word == "const" {
+        return TokenKind.TokConst
+    }
+    if word == "onkey" {
+        return TokenKind.TokOnkey
+    }
+    if word == "for" {
+        return TokenKind.TokFor
+    }
+    if word == "loop" {
+        return TokenKind.TokLoop
+    }
+    if word == "step" {
+        return TokenKind.TokStep
+    }
+    if word == "in" {
+        return TokenKind.TokIn
+    }
+    if word == "match" {
+        return TokenKind.TokMatch
+    }
+    if word == "case" {
+        return TokenKind.TokCase
+    }
+    if word == "default" {
+        return TokenKind.TokDefault
+    }
+    if word == "L" {
+        return TokenKind.TokLambda
+    }
+    if word == "true" {
+        return TokenKind.TokTrue
+    }
+    if word == "false" {
+        return TokenKind.TokFalse
+    }
+    if word == "type" {
+        return TokenKind.TokType
+    }
+    if word == "enum" {
+        return TokenKind.TokEnum
+    }
+    if word == "pop" {
+        return TokenKind.TokPop
+    }
+    if word == "len" {
+        return TokenKind.TokLen
+    }
+    if word == "append" {
+        return TokenKind.TokAppend
+    }
+    if word == "hmap" {
+        return TokenKind.TokHMap
+    }
+    if word == "incl" {
+        return TokenKind.TokSync
+    }
+    if word == "export" {
+        return  TokenKind.TokExport
+    }
+    if word == "as" {
+        return TokenKind.TokAs
+    }
+    return TokenKind.TokIdent
+}
+
+export fn next_token: Token(src: str, start: i32) {
+    let p: i32 = skip_whitespace(src, start)
+    let n: i32 = len(src)
+
+    if p >= n {
+        return Token(TokenKind.TokEof, 0, 0.0, "", p, 1)
+    }
+
+    let ch: char = src[p]
+
+    // String literals: "..."
+    let quote_char: char = '"'
+    let chr_char: char = (char)39
+    let esc_char: char = '\\'
+    if ch == quote_char {
+        let str_start: i32 = p
+        p = p + 1
+        while p < n && src[p] != quote_char {
+            if src[p] == esc_char && p + 1 < n {
+                p = p + 2
+            } else {
+                p = p + 1
+            }
+        }
+        if p < n && src[p] == quote_char {
+            p = p + 1
+        }
+        let str_literal: str = src[str_start..p]
+        return Token(TokenKind.TokStr, 0, 0.0, str_literal, p, 1)
+    }
+    if ch == chr_char {
+        let chr_start: i32 = p
+        p = p + 1
+        while p < n && src[p] != chr_char {
+            if src[p] == esc_char && p + 1 < n {
+                p = p + 2
+            } else {
+                p = p + 1
+            }
+        }
+        if p < n && src[p] == chr_char {
+            p = p + 1
+        }
+        let chr_literal: str = src[chr_start..p]
+        return Token(TokenKind.TokChar, 0, 0.0, chr_literal, p, 1)
+    }
+
+    // Number literals (integer and float)
+    if is_digit(ch) {
+        let num_start: i32 = p
+        let num: i32 = 0
+        while p < n && is_digit(src[p]) {
+            num = (num * 10) + (src[p] - '0')
+            p = p + 1
+        }
+        if p < n && src[p] == '.' && (p + 1 < n && is_digit(src[p + 1])) {
+            // Float: accumulate fractional digits
+            p = p + 1
+            let frac: f32 = 0.0
+            let place: f32 = 0.1
+            while p < n && is_digit(src[p]) {
+                let d_val: f32 = (f32)(src[p] - '0')
+                frac = frac + (d_val * place)
+                place = place * 0.1
+                p = p + 1
+            }
+            let f_num: f32 = (f32)num
+            let fval: f32 = f_num + frac
+            let float_str: str = src[num_start..p]
+            return Token(TokenKind.TokFloat, 0, fval, float_str, p, 1)
+        }
+        let num_str: str = src[num_start..p]
+        return Token(TokenKind.TokInt, num, 0.0, num_str, p, 1)
+    }
+    // Identifiers and keywords
+    if is_alpha(ch) {
+        let word_start: i32 = p
+        while p < n && (is_alpha(src[p]) || is_digit(src[p])) {
+            p = p + 1
+        }
+        let word: str = src[word_start..p]
+        if word == "isok" && p < n && src[p] == '?' {
+            p = p + 1
+            return Token(TokenKind.TokIsok, 0, 0.0, "isok" + "?", p , 1)
+        }
+
+        let kind: TokenKind = check_keyword(word)
+        return Token(kind, 0, 0.0, word, p, 1)
+    }
+
+    // Two-character operators (==, !=, <=, >=, &&, ||)
+    if p + 1 < n {
+        let next_ch: char = src[p + 1]
+        if ch == '=' && next_ch == '=' { return Token(TokenKind.TokEq, 0, 0.0, "==", p + 2, 1) }
+        if ch == '!' && next_ch == '=' { return Token(TokenKind.TokNe, 0, 0.0, "!=", p + 2, 1) }
+        if ch == '<' && next_ch == '=' { return Token(TokenKind.TokLe, 0, 0.0, "<=", p + 2, 1) }
+        if ch == '>' && next_ch == '=' { return Token(TokenKind.TokGe, 0, 0.0, ">=", p + 2, 1) }
+        if ch == '&' && next_ch == '&' { return Token(TokenKind.TokAnd, 0, 0.0, "&&", p + 2, 1) }
+        if ch == '|' && next_ch == '|' { return Token(TokenKind.TokOr, 0, 0.0, "||", p + 2, 1) }
+    }
+
+    // Single-character symbols
+    if ch == '+' { return Token(TokenKind.TokPlus, 0, 0.0, "+", p + 1, 1) }
+    if ch == '-' { return Token(TokenKind.TokMinus, 0, 0.0, "-", p + 1, 1) }
+    if ch == '*' { return Token(TokenKind.TokStar, 0, 0.0, "*", p + 1, 1) }
+    if ch == '/' { return Token(TokenKind.TokSlash, 0, 0.0, "/", p + 1, 1) }
+    if ch == '=' { return Token(TokenKind.TokAssign, 0, 0.0, "=", p + 1, 1) }
+    if ch == '<' { return Token(TokenKind.TokLt, 0, 0.0, "<", p + 1, 1) }
+    if ch == '>' { return Token(TokenKind.TokGt, 0, 0.0, ">", p + 1, 1) }
+    if ch == '!' { return Token(TokenKind.TokNot, 0, 0.0, "!", p + 1, 1) }
+    if ch == ':' { return Token(TokenKind.TokColon, 0, 0.0, ":", p + 1, 1) }
+    if ch == ',' { return Token(TokenKind.TokComma, 0, 0.0, ",", p + 1, 1) }
+    if ch == ';' { return Token(TokenKind.TokSemicolon, 0, 0.0, ";", p + 1, 1) }
+    if ch == '(' { return Token(TokenKind.TokLParen, 0, 0.0, "(", p + 1, 1) }
+    if ch == ')' { return Token(TokenKind.TokRParen, 0, 0.0, ")", p + 1, 1) }
+    if ch == '{' { return Token(TokenKind.TokLBrace, 0, 0.0, "{", p + 1, 1) }
+    if ch == '}' { return Token(TokenKind.TokRBrace, 0, 0.0, "}", p + 1, 1) }
+    if ch == '[' { return Token(TokenKind.TokLBracket, 0, 0.0, "[", p + 1, 1) }
+    if ch == ']' { return Token(TokenKind.TokRBracket, 0, 0.0, "]", p + 1, 1) }
+    if ch == '?' { return Token(TokenKind.TokQuestion, 0, 0.0, "?", p + 1, 1) }
+    if ch == '.' { return Token(TokenKind.TokDot, 0, 0.0, ".", p + 1, 1)}
+    if ch == '_' { return Token(TokenKind.TokDefault, 0, 0.0, "_", p + 1, 1) }
+
+    return Token(TokenKind.TokEof, 0, 0.0, "", p + 1, 1)
+}

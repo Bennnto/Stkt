@@ -1,6 +1,6 @@
 def test_fibonacci_and_loops(run_stkt):
     code = """
-proc fib:i32(n:i32){
+fn fib:i32(n:i32){
     if n <= 1 {
         return n
     } else {
@@ -16,7 +16,7 @@ onscreen(x)
 
 def test_function(run_stkt):
     code = """
-proc add:i32(a:i32, b:i32){
+fn add:i32(a:i32, b:i32){
     return a + b
 }
 

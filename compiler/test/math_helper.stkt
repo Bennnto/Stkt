@@ -1,0 +1,7 @@
+export fn square: i32(n: i32) {
+    return n * n
+}
+
+export fn cube: i32(n: i32) {
+    return n * n * n
+}

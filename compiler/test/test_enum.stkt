@@ -1,0 +1,14 @@
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+let c: i32 = Color.Green
+onscreen c
+
+if c == Color.Green {
+    onscreen "Color matched Green!"
+}
+
+onscreen "Enum tests completed successfully!"
